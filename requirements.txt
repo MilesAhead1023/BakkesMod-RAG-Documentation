@@ -1,0 +1,25 @@
+# Core RAG Framework
+llama-index-core>=0.14.6
+llama-index-llms-google-genai>=0.1.0
+llama-index-llms-anthropic>=0.1.0
+llama-index-llms-openai>=0.1.0
+llama-index-embeddings-openai>=0.1.0
+llama-index-retrievers-bm25>=0.1.0
+llama-index-graph-stores-neo4j>=0.1.0
+
+# LLM Provider SDKs
+google-genai>=1.33.0
+anthropic>=0.25.0
+openai>=1.0.0
+
+# Utilities
+nest-asyncio>=1.5.0
+watchdog>=3.0.0
+pandas>=2.0.0
+
+# Optional: Evaluation (uncomment if needed)
+# ragas>=0.1.0
+# phoenix>=3.0.0
+
+# MCP Integration
+mcp>=0.1.0
