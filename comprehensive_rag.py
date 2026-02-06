@@ -30,8 +30,32 @@ if sys.platform == "win32":
     # Setup logging
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
-# Note: LlamaIndex handles caching internally via Settings
-# No need for external GPTCache library (deprecated/unmaintained)
+# --- Semantic Caching with GPTCache ---
+# GPTCache reduces API costs by caching similar queries
+from gptcache import Cache
+from gptcache.embedding import OpenAI as GPTCacheEmbedding
+from gptcache.manager import CacheBase, VectorBase, get_data_manager
+from gptcache.similarity_evaluation.distance import SearchDistanceEvaluation
+
+# Initialize cache with semantic similarity
+cache = Cache()
+vector_base = VectorBase(
+    "faiss",  # Fast similarity search
+    dimension=1536,  # OpenAI embedding dimension
+    top_k=3
+)
+data_manager = get_data_manager(
+    CacheBase("sqlite"),  # Persistent storage
+    vector_base
+)
+cache.init(
+    embedding_func=GPTCacheEmbedding().to_embeddings,  # Use OpenAI for query embeddings
+    data_manager=data_manager,
+    similarity_evaluation=SearchDistanceEvaluation(),
+    similarity_threshold=0.9  # 90% similarity = cache hit
+)
+
+# Note: Cache applies to direct OpenAI API calls in embedding/LLM layers
 
 # --- Configuration ---
 DOCS_DIR = "./docs"

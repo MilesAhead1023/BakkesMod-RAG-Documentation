@@ -18,6 +18,10 @@ nest-asyncio>=1.5.0
 watchdog>=3.0.0
 pandas>=2.0.0
 
+# Caching (cost reduction)
+gptcache>=0.1.43
+faiss-cpu>=1.7.4  # For vector similarity search
+
 # Optional: Evaluation (uncomment if needed)
 # ragas>=0.1.0
 # phoenix>=3.0.0
