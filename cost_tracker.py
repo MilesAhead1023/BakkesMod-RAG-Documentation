@@ -25,11 +25,23 @@ class CostTracker:
         self.costs: Dict[str, Dict] = self._load_costs()
         self.lock = Lock()
         
-        # Initialize tokenizers
-        self.tokenizers = {
-            "gpt-4": tiktoken.encoding_for_model("gpt-4"),
-            "gpt-3.5": tiktoken.encoding_for_model("gpt-3.5-turbo"),
-        }
+        # Lazy-load tokenizers (only when needed)
+        self._tokenizers = None
+    
+    @property
+    def tokenizers(self):
+        """Lazy-load tokenizers on first use."""
+        if self._tokenizers is None:
+            try:
+                import tiktoken
+                self._tokenizers = {
+                    "gpt-4": tiktoken.encoding_for_model("gpt-4"),
+                    "gpt-3.5": tiktoken.encoding_for_model("gpt-3.5-turbo"),
+                }
+            except Exception as e:
+                print(f"⚠️  Could not load tiktoken: {e}. Token counting will use approximation.")
+                self._tokenizers = {}
+        return self._tokenizers
     
     def _load_costs(self) -> Dict:
         """Load cost history from disk."""
@@ -57,7 +69,14 @@ class CostTracker:
     
     def count_tokens(self, text: str, model: str = "gpt-4") -> int:
         """Count tokens in text for a given model."""
-        encoder = self.tokenizers.get(model, self.tokenizers["gpt-4"])
+        if not self.tokenizers:
+            # Fallback: approximate as 4 chars per token
+            return len(text) // 4
+        
+        encoder = self.tokenizers.get(model, self.tokenizers.get("gpt-4"))
+        if not encoder:
+            return len(text) // 4
+        
         return len(encoder.encode(text))
     
     def track_embedding(self, num_tokens: int, provider: str = "openai", model: str = "text-embedding-3-large"):

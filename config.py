@@ -6,7 +6,7 @@ Centralized configuration management with validation, cost tracking, and observa
 
 import os
 from typing import Optional, Literal
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -22,12 +22,14 @@ class EmbeddingConfig(BaseModel):
     batch_size: int = 100
     max_retries: int = 10
     
-    @validator("dimension")
-    def validate_dimension(cls, v, values):
+    @field_validator("dimension")
+    @classmethod
+    def validate_dimension(cls, v, info):
         """Ensure dimension matches model."""
-        if values.get("model") == "text-embedding-3-small":
+        model = info.data.get("model", "")
+        if "text-embedding-3-small" in model:
             return 1536
-        elif values.get("model") == "text-embedding-3-large":
+        elif "text-embedding-3-large" in model:
             return 3072
         return v
 
@@ -150,7 +152,8 @@ class StorageConfig(BaseModel):
     
     checkpoint_interval: int = 500  # Save every N nodes
     
-    @validator("docs_dir", "storage_dir", "cache_dir", "logs_dir")
+    @field_validator("docs_dir", "storage_dir", "cache_dir", "logs_dir")
+    @classmethod
     def create_if_not_exists(cls, v):
         """Ensure directories exist."""
         if not v.exists():
@@ -160,6 +163,8 @@ class StorageConfig(BaseModel):
 
 class RAGConfig(BaseModel):
     """Complete RAG system configuration - 2026 Gold Standard."""
+    
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     
     # API Keys (from environment)
     openai_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
@@ -177,16 +182,14 @@ class RAGConfig(BaseModel):
     production: ProductionConfig = Field(default_factory=ProductionConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     
-    @validator("openai_api_key", "anthropic_api_key", "google_api_key")
-    def validate_api_keys(cls, v, field):
+    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key")
+    @classmethod
+    def validate_api_keys(cls, v, info):
         """Warn if API keys are missing."""
         if not v:
-            print(f"⚠️  Warning: {field.name} not found in environment")
+            field_name = info.field_name
+            print(f"⚠️  Warning: {field_name} not found in environment")
         return v
-    
-    class Config:
-        """Pydantic configuration."""
-        arbitrary_types_allowed = True
 
 
 # Singleton instance
