@@ -10,6 +10,7 @@ import sys
 import time
 from datetime import datetime
 from dotenv import load_dotenv
+from cache_manager import SemanticCache
 
 # Load environment variables
 load_dotenv()
@@ -126,8 +127,19 @@ def build_rag_system():
     )
     query_engine = RetrieverQueryEngine.from_args(fusion_retriever, streaming=True)
 
+    # Initialize semantic cache
+    log("Initializing semantic cache...")
+    cache = SemanticCache(
+        cache_dir=".cache/semantic",
+        similarity_threshold=0.92,  # 92% similar = cache hit
+        ttl_seconds=86400 * 7,  # 7 days
+        embed_model=Settings.embed_model
+    )
+    cache_stats = cache.stats()
+    log(f"  Cache: {cache_stats['valid_entries']} valid entries, threshold={cache.similarity_threshold:.0%}")
+
     log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion: Vector+BM25+KG)")
-    return query_engine, len(documents), len(nodes)
+    return query_engine, cache, len(documents), len(nodes)
 
 def stream_response(response):
     """Display streaming response token by token.
@@ -187,7 +199,7 @@ def main():
 
     # Build system
     try:
-        query_engine, num_docs, num_nodes = build_rag_system()
+        query_engine, cache, num_docs, num_nodes = build_rag_system()
     except Exception as e:
         log(f"Failed to build system: {e}", "ERROR")
         import traceback
@@ -243,6 +255,33 @@ def main():
             log(f"Processing: {query[:60]}{'...' if len(query) > 60 else ''}")
             start_time = time.time()
 
+            # Check cache first
+            cache_result = cache.get(query)
+
+            if cache_result:
+                response_text, similarity, metadata = cache_result
+                query_time = time.time() - start_time
+
+                query_count += 1
+                total_time += query_time
+                successful += 1
+
+                print("\n" + "-" * 80)
+                print("[ANSWER] (from cache)")
+                print("-" * 80)
+                print(response_text)
+                print("-" * 80)
+
+                print(f"\n[METADATA]")
+                print(f"  Cache hit! (similarity: {similarity:.1%})")
+                print(f"  Cached query: '{metadata['cached_query'][:60]}...'")
+                print(f"  Cache age: {metadata['cache_age_seconds']/3600:.1f} hours")
+                print(f"  Query time: {query_time:.2f}s")
+                print(f"  Cost savings: ~$0.02-0.04")
+
+                continue  # Skip actual query
+
+            # If not in cache, do normal query
             try:
                 response = query_engine.query(query)
                 query_time = time.time() - start_time
@@ -254,9 +293,13 @@ def main():
                 # Stream the response
                 full_text = stream_response(response)
 
+                # Cache the response
+                cache.set(query, full_text, response.source_nodes)
+
                 print(f"\n[METADATA]")
                 print(f"  Query time: {query_time:.2f}s")
                 print(f"  Sources: {len(response.source_nodes)}")
+                print(f"  Cached for future queries")
 
                 if response.source_nodes:
                     print(f"\n[SOURCE FILES]")
