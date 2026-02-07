@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  rag-system:
+    build: .
+    container_name: bakkesmod-rag-2026
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "6006:6006"  # Phoenix UI
+      - "8000:8000"  # Prometheus metrics
+    volumes:
+      - ./docs:/app/docs:ro
+      - ./rag_storage:/app/rag_storage
+      - ./logs:/app/logs
+      - ./.cache:/app/.cache
+    restart: unless-stopped
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/metrics')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Run MCP server for Claude integration
+  mcp-server:
+    build: .
+    container_name: bakkesmod-mcp-server
+    command: python mcp_rag_server.py
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    volumes:
+      - ./docs:/app/docs:ro
+      - ./rag_storage:/app/rag_storage
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - rag-network
+    depends_on:
+      - rag-system
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  rag_storage:
+  logs:
