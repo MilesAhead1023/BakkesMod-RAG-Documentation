@@ -164,6 +164,73 @@ def stream_response(response):
 
     return "".join(tokens)
 
+def calculate_confidence(source_nodes: list) -> tuple:
+    """Calculate confidence score from retrieval quality.
+
+    Args:
+        source_nodes: List of retrieved source nodes with scores
+
+    Returns:
+        Tuple of (confidence_score, confidence_label, explanation)
+    """
+    if not source_nodes:
+        return 0.0, "NO DATA", "No sources retrieved"
+
+    # Get scores
+    scores = [node.score for node in source_nodes if hasattr(node, 'score') and node.score is not None]
+
+    if not scores:
+        return 0.5, "MEDIUM", "Sources retrieved but no similarity scores available"
+
+    # Calculate metrics
+    avg_score = sum(scores) / len(scores)
+    max_score = max(scores)
+    num_sources = len(source_nodes)
+
+    # Score variance (lower is better - more consistent retrieval)
+    if len(scores) > 1:
+        mean = sum(scores) / len(scores)
+        variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+        std_dev = variance ** 0.5
+    else:
+        std_dev = 0.0
+
+    # Calculate confidence (0-100%)
+    # Factors:
+    # - Average score (0-1): 50% weight
+    # - Max score (0-1): 20% weight
+    # - Number of sources (bonus): 10% weight
+    # - Consistency (low variance): 20% weight
+
+    score_component = avg_score * 50
+    max_component = max_score * 20
+    source_bonus = min(num_sources / 5.0, 1.0) * 10  # Max at 5 sources
+    consistency_component = max(0, (1 - std_dev) * 20)  # Lower variance = higher confidence
+
+    confidence = (score_component + max_component + source_bonus + consistency_component) / 100.0
+
+    # Clamp to 0-1
+    confidence = max(0.0, min(1.0, confidence))
+
+    # Assign label
+    if confidence >= 0.85:
+        label = "VERY HIGH"
+        explanation = "Excellent source match with high consistency"
+    elif confidence >= 0.70:
+        label = "HIGH"
+        explanation = "Strong source match with good relevance"
+    elif confidence >= 0.50:
+        label = "MEDIUM"
+        explanation = "Moderate source match, answer should be helpful"
+    elif confidence >= 0.30:
+        label = "LOW"
+        explanation = "Weak source match, verify answer carefully"
+    else:
+        label = "VERY LOW"
+        explanation = "Poor source match, answer may be unreliable"
+
+    return confidence, label, explanation
+
 def display_help():
     """Display help information."""
     print("\n" + "=" * 80)
@@ -296,9 +363,13 @@ def main():
                 # Cache the response
                 cache.set(query, full_text, response.source_nodes)
 
+                # Calculate confidence
+                confidence, conf_label, conf_explanation = calculate_confidence(response.source_nodes)
+
                 print(f"\n[METADATA]")
                 print(f"  Query time: {query_time:.2f}s")
                 print(f"  Sources: {len(response.source_nodes)}")
+                print(f"  Confidence: {confidence:.0%} ({conf_label}) - {conf_explanation}")
                 print(f"  Cached for future queries")
 
                 if response.source_nodes:
