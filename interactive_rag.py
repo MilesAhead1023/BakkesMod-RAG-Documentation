@@ -8,9 +8,17 @@ Provides detailed logging and formatted responses.
 import os
 import sys
 import time
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 from cache_manager import SemanticCache
+
+# Initialize colorama for Windows terminal colors
+try:
+    import colorama
+    colorama.init()
+except ImportError:
+    pass  # Colorama not required, just nice to have
 
 # Load environment variables
 load_dotenv()
@@ -141,6 +149,48 @@ def build_rag_system():
     log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion: Vector+BM25+KG)")
     return query_engine, cache, len(documents), len(nodes)
 
+def highlight_code_blocks(text: str) -> str:
+    """Apply syntax highlighting to C++ code blocks.
+
+    Args:
+        text: Response text with potential code blocks
+
+    Returns:
+        Text with syntax-highlighted code blocks
+    """
+    try:
+        from pygments import highlight
+        from pygments.lexers import CppLexer, get_lexer_by_name
+        from pygments.formatters import TerminalFormatter
+
+        # Pattern to match code blocks
+        code_block_pattern = r'```(\w+)?\n(.*?)```'
+
+        def highlight_match(match):
+            language = match.group(1) or 'cpp'  # Default to C++
+            code = match.group(2)
+
+            try:
+                # Try to get lexer for the specified language
+                if language.lower() in ['cpp', 'c++', 'c']:
+                    lexer = CppLexer()
+                else:
+                    lexer = get_lexer_by_name(language, stripall=True)
+
+                highlighted = highlight(code, lexer, TerminalFormatter())
+                return f'\n{highlighted}'
+            except:
+                # If highlighting fails, return original
+                return match.group(0)
+
+        # Apply highlighting to all code blocks
+        highlighted_text = re.sub(code_block_pattern, highlight_match, text, flags=re.DOTALL)
+        return highlighted_text
+
+    except ImportError:
+        # If pygments not available, return original
+        return text
+
 def stream_response(response):
     """Display streaming response token by token.
 
@@ -162,7 +212,20 @@ def stream_response(response):
     print()  # Newline after streaming
     print("-" * 80)
 
-    return "".join(tokens)
+    full_text = "".join(tokens)
+
+    # Apply syntax highlighting if code blocks present
+    if "```" in full_text:
+        highlighted = highlight_code_blocks(full_text)
+        # Clear previous output and reprint with highlighting
+        print("\033[F" * (full_text.count('\n') + 3))  # Move cursor up
+        print("\n" + "-" * 80)
+        print("[ANSWER]")
+        print("-" * 80)
+        print(highlighted)
+        print("-" * 80)
+
+    return full_text
 
 def calculate_confidence(source_nodes: list) -> tuple:
     """Calculate confidence score from retrieval quality.

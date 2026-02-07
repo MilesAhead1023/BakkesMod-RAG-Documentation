@@ -17,6 +17,8 @@ openai>=1.0.0
 nest-asyncio>=1.5.0
 watchdog>=3.0.0
 pandas>=2.0.0
+pygments>=2.15.0  # Syntax highlighting for code blocks
+colorama>=0.4.6  # Cross-platform colored terminal output
 
 # Caching (cost reduction)
 gptcache>=0.1.43
