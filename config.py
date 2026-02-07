@@ -38,12 +38,12 @@ class LLMConfig(BaseModel):
     """Configuration for LLM providers."""
     # Primary LLM for query engine
     primary_provider: Literal["openai", "anthropic", "gemini"] = "anthropic"
-    primary_model: str = "claude-3-5-sonnet-20240620"
-    
+    primary_model: str = "claude-sonnet-4-5"  # Claude Sonnet 4.5
+
     # LLM for knowledge graph extraction (should be fast and cheap)
     kg_provider: Literal["openai", "anthropic", "gemini"] = "openai"
     kg_model: str = "gpt-4o-mini"
-    
+
     # Reranker LLM
     rerank_provider: Literal["openai", "anthropic"] = "openai"
     rerank_model: str = "gpt-4o-mini"
@@ -59,8 +59,8 @@ class RetrieverConfig(BaseModel):
     vector_top_k: int = 10
     
     # Knowledge graph retrieval
-    kg_top_k: int = 10
-    kg_max_triplets_per_chunk: int = 5
+    kg_similarity_top_k: int = 3
+    kg_max_triplets_per_chunk: int = 2
     kg_include_embeddings: bool = True
     
     # BM25 retrieval
@@ -150,7 +150,7 @@ class StorageConfig(BaseModel):
     cache_dir: Path = Path("./.cache")
     logs_dir: Path = Path("./logs")
     
-    checkpoint_interval: int = 500  # Save every N nodes
+    checkpoint_interval: int = 100  # Save every N nodes (smaller = more frequent saves)
     
     @field_validator("docs_dir", "storage_dir", "cache_dir", "logs_dir")
     @classmethod
@@ -188,7 +188,7 @@ class RAGConfig(BaseModel):
         """Warn if API keys are missing."""
         if not v:
             field_name = info.field_name
-            print(f"⚠️  Warning: {field_name} not found in environment")
+            print(f"[WARNING] {field_name} not found in environment")
         return v
 
 
@@ -215,7 +215,7 @@ def reload_config():
 if __name__ == "__main__":
     # Test configuration
     config = get_config()
-    print("✅ Configuration loaded successfully!")
+    print("[OK] Configuration loaded successfully!")
     print(f"Primary LLM: {config.llm.primary_provider} - {config.llm.primary_model}")
     print(f"Embedding: {config.embedding.provider} - {config.embedding.model}")
     print(f"Phoenix enabled: {config.observability.phoenix_enabled}")
