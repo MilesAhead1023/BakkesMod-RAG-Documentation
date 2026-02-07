@@ -38,7 +38,7 @@ class LLMConfig(BaseModel):
     """Configuration for LLM providers."""
     # Primary LLM for query engine
     primary_provider: Literal["openai", "anthropic", "gemini"] = "anthropic"
-    primary_model: str = "claude-sonnet-4-5"  # Claude Sonnet 4.5
+    primary_model: str = "claude-3-5-sonnet-20240620"
 
     # LLM for knowledge graph extraction (should be fast and cheap)
     kg_provider: Literal["openai", "anthropic", "gemini"] = "openai"
@@ -57,8 +57,9 @@ class RetrieverConfig(BaseModel):
     """Configuration for retrieval components."""
     # Vector retrieval
     vector_top_k: int = 10
-    
+
     # Knowledge graph retrieval
+    enable_kg: bool = True
     kg_similarity_top_k: int = 3
     kg_max_triplets_per_chunk: int = 2
     kg_include_embeddings: bool = True
@@ -188,7 +189,7 @@ class RAGConfig(BaseModel):
         """Warn if API keys are missing."""
         if not v:
             field_name = info.field_name
-            print(f"[WARNING] {field_name} not found in environment")
+            print(f"⚠️  Warning: {field_name} not found in environment")
         return v
 
 
@@ -215,7 +216,7 @@ def reload_config():
 if __name__ == "__main__":
     # Test configuration
     config = get_config()
-    print("[OK] Configuration loaded successfully!")
+    print("✅ Configuration loaded successfully!")
     print(f"Primary LLM: {config.llm.primary_provider} - {config.llm.primary_model}")
     print(f"Embedding: {config.embedding.provider} - {config.embedding.model}")
     print(f"Phoenix enabled: {config.observability.phoenix_enabled}")
