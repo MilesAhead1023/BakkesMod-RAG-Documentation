@@ -124,10 +124,33 @@ def build_rag_system():
         mode="reciprocal_rerank",
         use_async=True
     )
-    query_engine = RetrieverQueryEngine.from_args(fusion_retriever)
+    query_engine = RetrieverQueryEngine.from_args(fusion_retriever, streaming=True)
 
     log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion: Vector+BM25+KG)")
     return query_engine, len(documents), len(nodes)
+
+def stream_response(response):
+    """Display streaming response token by token.
+
+    Args:
+        response: StreamingResponse from query engine
+
+    Returns:
+        str: Complete response text
+    """
+    print("\n" + "-" * 80)
+    print("[ANSWER]")
+    print("-" * 80)
+
+    tokens = []
+    for token in response.response_gen:
+        print(token, end="", flush=True)
+        tokens.append(token)
+
+    print()  # Newline after streaming
+    print("-" * 80)
+
+    return "".join(tokens)
 
 def display_help():
     """Display help information."""
@@ -228,12 +251,8 @@ def main():
                 total_time += query_time
                 successful += 1
 
-                # Display results
-                print("\n" + "-" * 80)
-                print("[ANSWER]")
-                print("-" * 80)
-                print(response)
-                print("-" * 80)
+                # Stream the response
+                full_text = stream_response(response)
 
                 print(f"\n[METADATA]")
                 print(f"  Query time: {query_time:.2f}s")
