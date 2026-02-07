@@ -14,7 +14,7 @@ Thank you for your interest in contributing to the BakkesMod RAG Documentation s
 
 ## Code of Conduct
 
-This project adheres to a Code of Conduct that all contributors are expected to follow. Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
+This project adheres to a Code of Conduct that all contributors are expected to follow. Please ensure you are familiar with and follow these standards in all project interactions.
 
 ## Getting Started
 
@@ -36,7 +36,7 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 - Python 3.8 or higher
 - pip and virtualenv
 - Git
-- API keys for at least one LLM provider (OpenAI, Gemini, or Anthropic)
+- API keys for all three LLM providers (OpenAI, Anthropic, and Google/Gemini)
 
 ### Environment Setup
 
@@ -55,16 +55,39 @@ This project adheres to a Code of Conduct that all contributors are expected to 
    Create a `.env` file in the project root:
    ```env
    OPENAI_API_KEY=your_openai_key_here
-   GEMINI_API_KEY=your_gemini_key_here
+   GOOGLE_API_KEY=your_gemini_key_here
    ANTHROPIC_API_KEY=your_anthropic_key_here
    ```
-
-4. **Build the RAG index** (required for testing):
+   
+   The Python scripts read these values from environment variables via `os.environ` and do **not**
+   automatically load the `.env` file. Before running any Python scripts, make sure these
+   variables are exported in your shell. For example, on macOS/Linux:
    ```bash
+   # load variables from .env into the current shell
+   export $(grep -v '^#' .env | xargs)
+
+   # now run your script
+   python rag_builder.py
+   ```
+   On Windows PowerShell, you can set them for the current session:
+   ```powershell
+   Get-Content .env | ForEach-Object {
+       if ($_ -match '^\s*#' -or -not $_) { return }
+       $name, $value = $_ -split '=', 2
+       [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+   }
+
    python rag_builder.py
    ```
 
-For more detailed setup instructions, see [DEVELOPMENT.md](DEVELOPMENT.md).
+4. **Build the RAG index** (required for testing):
+   The integration tests and sentinel checks expect RAG indices to be available under
+   the `./rag_storage/` directory. Use `comprehensive_rag.py` to build the indices:
+   ```bash
+   python comprehensive_rag.py  # builds indices in ./rag_storage/
+   ```
+
+For more detailed setup instructions, see [docs/rag-setup.md](docs/rag-setup.md).
 
 ## Making Changes
 
@@ -104,6 +127,12 @@ Fixes #123
 
 ### Running Tests
 
+First, install test dependencies:
+
+```bash
+pip install pytest pytest-asyncio
+```
+
 Run all tests before submitting a pull request:
 
 ```bash
@@ -140,13 +169,9 @@ pytest test_smoke.py::test_query_with_cache -v
    ```
 
 3. **Check code style**:
-   ```bash
-   # Format code (if using black)
-   black *.py
-   
-   # Check for issues
-   flake8 *.py
-   ```
+   Make sure your changes follow the project's [Style Guidelines](#style-guidelines)
+   (PEP 8, docstrings, line length, etc.). You may use your preferred formatter
+   and linter locally, but the project does not require any specific tooling.
 
 ### Creating a Pull Request
 
