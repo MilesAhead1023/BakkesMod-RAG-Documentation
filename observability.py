@@ -7,9 +7,8 @@ Phoenix integration for LLM tracing and comprehensive system monitoring.
 import logging
 import json
 import sys
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 from datetime import datetime
-from pathlib import Path
 from config import get_config
 
 
@@ -21,17 +20,20 @@ class StructuredLogger:
         self.logger = logging.getLogger(name)
         self.logger.setLevel(getattr(logging, self.config.log_level))
         
-        # Configure handler
-        handler = logging.StreamHandler(sys.stdout)
-        
-        if self.config.log_format == "json":
-            handler.setFormatter(JsonFormatter())
-        else:
-            handler.setFormatter(logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            ))
-        
-        self.logger.addHandler(handler)
+        # Only add handler if logger doesn't already have handlers
+        if not self.logger.handlers:
+            # Configure handler
+            handler = logging.StreamHandler(sys.stdout)
+            
+            if self.config.log_format == "json":
+                handler.setFormatter(JsonFormatter())
+            else:
+                handler.setFormatter(logging.Formatter(
+                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                ))
+            
+            self.logger.addHandler(handler)
+            self.logger.propagate = False
     
     def log_query(self, query: str, metadata: Optional[Dict] = None):
         """Log a RAG query."""
@@ -146,8 +148,10 @@ class PhoenixObserver:
         if self.phoenix_session:
             try:
                 self.phoenix_session.close()
-            except:
-                pass
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    "Failed to close Phoenix session cleanly: %s", e
+                )
 
 
 class MetricsCollector:

@@ -4,10 +4,7 @@
 Production-grade RAG with observability, cost tracking, and resilience.
 """
 
-import os
 import time
-from typing import Optional
-from pathlib import Path
 
 from llama_index.core import (
     SimpleDirectoryReader,
@@ -21,7 +18,9 @@ from llama_index.core import (
 from llama_index.core.node_parser import MarkdownNodeParser
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.google_genai import GoogleGenerativeAI
 from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -31,7 +30,6 @@ from llama_index.core.postprocessor import LLMRerank
 from config import get_config
 from observability import initialize_observability, get_logger, get_metrics
 from cost_tracker import get_tracker
-from resilience import resilient_api_call, FallbackChain
 
 
 class GoldStandardRAG:
@@ -64,10 +62,17 @@ class GoldStandardRAG:
     def _configure_settings(self):
         """Configure global LlamaIndex settings."""
         # Embedding model
-        Settings.embed_model = OpenAIEmbedding(
-            model=self.config.embedding.model,
-            max_retries=self.config.embedding.max_retries
-        )
+        if self.config.embedding.provider == "openai":
+            Settings.embed_model = OpenAIEmbedding(
+                model=self.config.embedding.model,
+                max_retries=self.config.embedding.max_retries
+            )
+        elif self.config.embedding.provider == "huggingface":
+            Settings.embed_model = HuggingFaceEmbedding(
+                model_name=self.config.embedding.model
+            )
+        else:
+            raise ValueError(f"Unsupported embedding provider: {self.config.embedding.provider}")
         
         # Primary LLM (for query engine)
         if self.config.llm.primary_provider == "anthropic":
@@ -84,6 +89,14 @@ class GoldStandardRAG:
                 temperature=self.config.llm.temperature,
                 timeout=self.config.llm.timeout
             )
+        elif self.config.llm.primary_provider == "gemini":
+            Settings.llm = GoogleGenerativeAI(
+                model=self.config.llm.primary_model,
+                max_retries=self.config.llm.max_retries,
+                temperature=self.config.llm.temperature
+            )
+        else:
+            raise ValueError(f"Unsupported primary LLM provider: {self.config.llm.primary_provider}")
         
         self.logger.logger.info("Settings configured", extra={
             "event": "settings_configured",
@@ -141,11 +154,27 @@ class GoldStandardRAG:
             vector_index = load_index_from_storage(storage_context, index_id="vector")
         
         # Build/load knowledge graph index
-        kg_llm = OpenAI(
-            model=self.config.llm.kg_model,
-            max_retries=self.config.llm.max_retries,
-            temperature=0
-        )
+        kg_provider = self.config.llm.kg_provider
+        if kg_provider == "openai":
+            kg_llm = OpenAI(
+                model=self.config.llm.kg_model,
+                max_retries=self.config.llm.max_retries,
+                temperature=0
+            )
+        elif kg_provider == "anthropic":
+            kg_llm = Anthropic(
+                model=self.config.llm.kg_model,
+                max_retries=self.config.llm.max_retries,
+                temperature=0
+            )
+        elif kg_provider == "gemini":
+            kg_llm = GoogleGenerativeAI(
+                model=self.config.llm.kg_model,
+                max_retries=self.config.llm.max_retries,
+                temperature=0
+            )
+        else:
+            raise ValueError(f"Unsupported KG LLM provider: {kg_provider}")
         
         try:
             storage_context = StorageContext.from_defaults(persist_dir=str(storage_dir))
@@ -209,11 +238,24 @@ class GoldStandardRAG:
         )
         
         # Reranker
-        rerank_llm = OpenAI(
-            model=self.config.llm.rerank_model,
-            max_retries=self.config.llm.max_retries,
-            temperature=0
-        )
+        rerank_provider = self.config.llm.rerank_provider
+        if rerank_provider == "openai":
+            rerank_llm = OpenAI(
+                model=self.config.llm.rerank_model,
+                max_retries=self.config.llm.max_retries,
+                temperature=0
+            )
+        elif rerank_provider == "anthropic":
+            rerank_llm = Anthropic(
+                model=self.config.llm.rerank_model,
+                max_retries=self.config.llm.max_retries,
+                temperature=0
+            )
+        else:
+            raise ValueError(
+                f"Unsupported rerank_provider '{rerank_provider}'. "
+                "Supported providers are: 'openai', 'anthropic'."
+            )
         reranker = LLMRerank(
             choice_batch_size=self.config.retriever.rerank_batch_size,
             top_n=self.config.retriever.rerank_top_n,
@@ -254,7 +296,7 @@ class GoldStandardRAG:
             
             # Estimate and track costs
             # (In production, you'd get actual token counts from the API response)
-            estimated_input_tokens = len(query_text) // 4 + sum(len(node.get_content()) // 4 for node in response.source_nodes[:5])
+            estimated_input_tokens = len(query_text) // 4 + sum(len(node.node.get_content()) // 4 for node in response.source_nodes[:5])
             estimated_output_tokens = len(str(response)) // 4
             
             self.cost_tracker.track_llm_call(

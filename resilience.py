@@ -6,9 +6,9 @@ Circuit breakers, retry strategies, and fallback mechanisms for production-grade
 
 import time
 import random
-from typing import Callable, Any, Optional, List
+from typing import Callable, Any, List
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime
 from threading import Lock
 from tenacity import (
     retry,
@@ -24,6 +24,11 @@ from config import get_config
 from observability import get_logger
 
 logger = get_logger()
+
+
+class CircuitBreakerOpen(Exception):
+    """Exception raised when circuit breaker is open."""
+    pass
 
 
 class CircuitBreaker:
@@ -55,7 +60,7 @@ class CircuitBreaker:
                 if self._should_attempt_reset():
                     self.state = self.HALF_OPEN
                 else:
-                    raise Exception(f"Circuit breaker OPEN. Service unavailable.")
+                    raise CircuitBreakerOpen(f"Circuit breaker OPEN. Service unavailable.")
         
         try:
             result = func(*args, **kwargs)
@@ -133,7 +138,7 @@ class APICallManager:
                 min=1,
                 max=60
             ),
-            retry=retry_if_exception_type(Exception),
+            retry=retry_if_exception_type((Exception,)) & ~retry_if_exception_type(CircuitBreakerOpen),
             before_sleep=before_sleep_log(logger.logger, logging.WARNING),
             after=after_log(logger.logger, logging.INFO)
         )
@@ -209,25 +214,29 @@ class RateLimiter:
     
     def acquire(self):
         """Acquire a token, blocking if necessary."""
-        with self.lock:
-            now = time.time()
-            elapsed = now - self.last_update
-            
-            # Refill tokens
-            self.tokens = min(
-                self.requests_per_minute,
-                self.tokens + (elapsed * self.requests_per_minute / 60.0)
-            )
-            self.last_update = now
-            
-            # Check if we have tokens
-            if self.tokens < 1:
-                # Calculate wait time
+        while True:
+            with self.lock:
+                now = time.time()
+                elapsed = now - self.last_update
+                
+                # Refill tokens
+                self.tokens = min(
+                    self.requests_per_minute,
+                    self.tokens + (elapsed * self.requests_per_minute / 60.0)
+                )
+                self.last_update = now
+                
+                # If we have a token available, consume it and return
+                if self.tokens >= 1:
+                    self.tokens -= 1
+                    return
+                
+                # No tokens available; calculate wait time before retrying
                 wait_time = (1 - self.tokens) * (60.0 / self.requests_per_minute)
+            
+            # Sleep outside the lock to avoid blocking other threads
+            if wait_time > 0:
                 time.sleep(wait_time)
-                self.tokens = 0
-            else:
-                self.tokens -= 1
 
 
 class RateLimitedCaller:
@@ -252,12 +261,13 @@ class RateLimitedCaller:
 # Decorator for resilient API calls
 def resilient_api_call(provider: str):
     """Decorator for resilient API calls with retry, circuit breaker, and rate limiting."""
+    # Create long-lived instances per decorated function so state is preserved
+    api_manager = APICallManager()
+    rate_limiter = RateLimitedCaller()
+    
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            api_manager = APICallManager()
-            rate_limiter = RateLimitedCaller()
-            
             def rate_limited_func():
                 return rate_limiter.call(func, *args, **kwargs)
             

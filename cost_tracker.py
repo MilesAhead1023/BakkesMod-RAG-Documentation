@@ -4,7 +4,6 @@ Cost Tracking and Budget Management
 Real-time cost tracking for RAG operations with budget alerts.
 """
 
-import time
 import json
 from pathlib import Path
 from typing import Dict, Optional

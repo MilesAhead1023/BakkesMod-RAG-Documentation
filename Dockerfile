@@ -29,7 +29,7 @@ ENV LOG_LEVEL=INFO
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/metrics')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/metrics')"
 
 # Default command (can be overridden)
 CMD ["python", "rag_2026.py"]
