@@ -132,6 +132,41 @@ GOOGLE_API_KEY=your_google_key_here
 # LOG_LEVEL=DEBUG
 ```
 
+## 🎨 NEW: Web-Based GUI
+
+**Professional interface for querying documentation and generating plugins!**
+
+### Launch the GUI
+
+**Linux/Mac:**
+```bash
+./start_gui.sh
+```
+
+**Windows:**
+```cmd
+start_gui.bat
+```
+
+**Or manually:**
+```bash
+python rag_gui.py
+```
+
+The GUI will open in your browser at `http://localhost:7860`
+
+### GUI Features
+
+- **📚 Query Documentation**: Ask questions with real-time streaming responses
+- **⚙️ Generate Plugin Code**: Create complete C++ plugins from descriptions
+- **📊 Session Statistics**: Track usage, performance, and cost savings
+- **💾 Export Functionality**: Save generated code to files
+- **🎯 Confidence Scores**: Know how reliable each answer is
+- **📖 Source Citations**: See which docs were used
+- **⚡ Semantic Caching**: 30-40% cost savings on similar queries
+
+See [GUI_USER_GUIDE.md](GUI_USER_GUIDE.md) for detailed documentation.
+
 ### Quick Start
 
 **Option 1: Use the 2026 Gold Standard RAG (Recommended)**

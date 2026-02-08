@@ -22,6 +22,9 @@ pandas>=2.0.0
 pygments>=2.15.0  # Syntax highlighting for code blocks
 colorama>=0.4.6  # Cross-platform colored terminal output
 
+# GUI Framework
+gradio>=4.0.0  # Web-based GUI for RAG system
+
 # Caching (cost reduction)
 gptcache>=0.1.43
 faiss-cpu>=1.7.4  # For vector similarity search

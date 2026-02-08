@@ -88,3 +88,11 @@ dmypy.json
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Generated plugin code
+generated_plugins/
+
+# Additional test artifacts
+sqlite.db
+test_results.txt
+test_results_runnable.txt
