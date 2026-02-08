@@ -145,7 +145,24 @@ GOOGLE_API_KEY=your_google_key_here
 
 **Professional interface for querying documentation and generating plugins!**
 
-### Launch the GUI
+### Option 1: Windows Executable (No Python Required!)
+
+**Download and run the pre-built executable:**
+
+1. Download `BakkesMod_RAG_GUI.zip` from [Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases)
+2. Extract to your desired location
+3. Copy `.env.example` to `.env` and add your API keys
+4. Run `BakkesMod_RAG_GUI.exe`
+
+**Or build it yourself:**
+
+```cmd
+build_exe.bat
+```
+
+See [EXE_USER_GUIDE.md](EXE_USER_GUIDE.md) for detailed instructions.
+
+### Option 2: Run from Source
 
 **Windows:**
 ```cmd
