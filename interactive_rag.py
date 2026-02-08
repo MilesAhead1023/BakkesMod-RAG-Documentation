@@ -102,6 +102,11 @@ def main():
     print("=" * 80)
 
     from bakkesmod_rag import RAGEngine
+    from bakkesmod_rag.setup_keys import ensure_api_keys
+
+    if not ensure_api_keys():
+        log("Required API keys missing — cannot start.", "ERROR")
+        sys.exit(1)
 
     log("Building RAG system...")
     try:

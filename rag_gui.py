@@ -45,6 +45,9 @@ def initialize():
     """
     global engine
     from bakkesmod_rag import RAGEngine
+    from bakkesmod_rag.setup_keys import ensure_api_keys
+
+    ensure_api_keys()
 
     try:
         engine = RAGEngine()

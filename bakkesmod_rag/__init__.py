@@ -26,6 +26,7 @@ from bakkesmod_rag.observability import (
     initialize_observability,
 )
 from bakkesmod_rag.cost_tracker import CostTracker, get_tracker
+from bakkesmod_rag.setup_keys import ensure_api_keys
 
 
 __all__ = [
@@ -36,6 +37,8 @@ __all__ = [
     "CodeResult",
     "get_config",
     "reload_config",
+    # Setup
+    "ensure_api_keys",
     # Resilience
     "CircuitBreaker",
     "CircuitBreakerOpen",
