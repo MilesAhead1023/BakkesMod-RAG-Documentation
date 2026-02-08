@@ -71,9 +71,11 @@ class RetrieverConfig(BaseModel):
     fusion_mode: Literal["reciprocal_rerank", "simple"] = "reciprocal_rerank"
     fusion_num_queries: int = 1
     
-    # Reranker
-    rerank_top_n: int = 5
-    rerank_batch_size: int = 5
+    # Reranker (Phase 2: Neural reranking)
+    enable_reranker: bool = True  # Enable Cohere reranker
+    reranker_model: str = "rerank-english-v3.0"  # Cohere rerank model
+    rerank_top_n: int = 5  # Return top 5 after reranking
+    rerank_batch_size: int = 10  # Rerank top 10 from retrieval
 
 
 class ChunkingConfig(BaseModel):
@@ -171,6 +173,7 @@ class RAGConfig(BaseModel):
     openai_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     anthropic_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
     google_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("GOOGLE_API_KEY"))
+    cohere_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("COHERE_API_KEY"))  # Phase 2: Neural reranking
     
     # Component configurations
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -183,7 +186,7 @@ class RAGConfig(BaseModel):
     production: ProductionConfig = Field(default_factory=ProductionConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     
-    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key")
+    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key", "cohere_api_key")
     @classmethod
     def validate_api_keys(cls, v, info):
         """Warn if API keys are missing."""

@@ -7,11 +7,13 @@ llama-index-embeddings-openai>=0.1.0
 llama-index-embeddings-huggingface>=0.1.0
 llama-index-retrievers-bm25>=0.1.0
 llama-index-graph-stores-neo4j>=0.1.0
+llama-index-postprocessor-cohere-rerank>=0.1.0  # Phase 2: Neural reranking
 
 # LLM Provider SDKs
 google-genai>=1.33.0
 anthropic>=0.25.0
 openai>=1.0.0
+cohere>=5.0.0  # Phase 2: Reranking API
 
 # Utilities
 nest-asyncio>=1.5.0

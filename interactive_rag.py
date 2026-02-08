@@ -54,6 +54,14 @@ def build_rag_system():
     from llama_index.core.query_engine import RetrieverQueryEngine
     from llama_index.core.indices.knowledge_graph import KnowledgeGraphIndex
 
+    # Phase 2: Neural reranking
+    try:
+        from llama_index.postprocessor.cohere_rerank import CohereRerank
+        cohere_available = True
+    except ImportError:
+        cohere_available = False
+        log("Cohere reranker not available (install llama-index-postprocessor-cohere-rerank)", "WARNING")
+
     # Configure
     Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", max_retries=3)
     Settings.llm = Anthropic(model="claude-sonnet-4-5", max_retries=3, temperature=0)
@@ -133,7 +141,26 @@ def build_rag_system():
         mode="reciprocal_rerank",
         use_async=True
     )
-    query_engine = RetrieverQueryEngine.from_args(fusion_retriever, streaming=True)
+
+    # Phase 2: Add neural reranker if available
+    node_postprocessors = []
+    if cohere_available and os.getenv("COHERE_API_KEY"):
+        try:
+            reranker = CohereRerank(
+                api_key=os.getenv("COHERE_API_KEY"),
+                model="rerank-english-v3.0",
+                top_n=5  # Return top 5 after reranking
+            )
+            node_postprocessors.append(reranker)
+            log("Neural reranker enabled (Cohere)")
+        except Exception as e:
+            log(f"Failed to initialize Cohere reranker: {e}", "WARNING")
+
+    query_engine = RetrieverQueryEngine.from_args(
+        fusion_retriever,
+        streaming=True,
+        node_postprocessors=node_postprocessors if node_postprocessors else None
+    )
 
     # Initialize semantic cache
     log("Initializing semantic cache...")
@@ -146,7 +173,8 @@ def build_rag_system():
     cache_stats = cache.stats()
     log(f"  Cache: {cache_stats['valid_entries']} valid entries, threshold={cache.similarity_threshold:.0%}")
 
-    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion + multi-query: Vector+BM25+KG × 4 variants)")
+    reranker_status = " + Neural reranking" if node_postprocessors else ""
+    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion + multi-query{reranker_status}: Vector+BM25+KG × 4 variants)")
     return query_engine, cache, len(documents), len(nodes)
 
 def highlight_code_blocks(text: str) -> str:
