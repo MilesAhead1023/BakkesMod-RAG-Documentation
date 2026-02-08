@@ -126,10 +126,10 @@ def build_rag_system():
     bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=5)
     kg_retriever = kg_index.as_retriever(similarity_top_k=3)
 
-    # Create query engine with 3-way fusion (Vector + BM25 + KG)
+    # Create query engine with 3-way fusion (Vector + BM25 + KG) + multi-query
     fusion_retriever = QueryFusionRetriever(
         [vector_retriever, bm25_retriever, kg_retriever],
-        num_queries=1,
+        num_queries=4,  # Phase 2: Generate 4 query variants for better coverage
         mode="reciprocal_rerank",
         use_async=True
     )
@@ -146,7 +146,7 @@ def build_rag_system():
     cache_stats = cache.stats()
     log(f"  Cache: {cache_stats['valid_entries']} valid entries, threshold={cache.similarity_threshold:.0%}")
 
-    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion: Vector+BM25+KG)")
+    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion + multi-query: Vector+BM25+KG × 4 variants)")
     return query_engine, cache, len(documents), len(nodes)
 
 def highlight_code_blocks(text: str) -> str:
