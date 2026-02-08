@@ -138,8 +138,11 @@ class RAGEngine:
             embed_model=self.embed_model,
         )
 
-        # Query rewriter (synonym expansion only, no LLM cost) ---------
-        self.rewriter = QueryRewriter(llm=self.llm, use_llm=False)
+        # Query rewriter (synonym expansion + LLM rewriting) ------------
+        self.rewriter = QueryRewriter(
+            llm=self.llm,
+            use_llm=self.config.retriever.enable_llm_rewrite,
+        )
 
         # Cost tracking -------------------------------------------------
         self.cost_tracker = CostTracker(config=self.config)

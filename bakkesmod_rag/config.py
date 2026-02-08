@@ -70,6 +70,8 @@ class RetrieverConfig(BaseModel):
     reranker_model: str = "rerank-english-v3.0"
     rerank_top_n: int = 5
 
+    enable_llm_rewrite: bool = True
+
 
 class ChunkingConfig(BaseModel):
     """Configuration for document chunking."""
@@ -89,7 +91,7 @@ class CacheConfig(BaseModel):
 
 class ObservabilityConfig(BaseModel):
     """Configuration for monitoring and observability."""
-    enabled: bool = False
+    enabled: bool = True
     phoenix_enabled: bool = False
     phoenix_host: str = "127.0.0.1"
     phoenix_port: int = 6006
