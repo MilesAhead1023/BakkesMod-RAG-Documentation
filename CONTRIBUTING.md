@@ -41,9 +41,17 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 ### Environment Setup
 
 1. **Create a virtual environment**:
+   
+   **Windows:**
+   ```cmd
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+   
+   **Linux/Mac:**
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate
    ```
 
 2. **Install dependencies**:
@@ -61,15 +69,9 @@ This project adheres to a Code of Conduct that all contributors are expected to 
    
    The Python scripts read these values from environment variables via `os.environ` and do **not**
    automatically load the `.env` file. Before running any Python scripts, make sure these
-   variables are exported in your shell. For example, on macOS/Linux:
-   ```bash
-   # load variables from .env into the current shell
-   export $(grep -v '^#' .env | xargs)
-
-   # now run your script
-   python rag_builder.py
-   ```
-   On Windows PowerShell, you can set them for the current session:
+   variables are exported in your shell.
+   
+   **Windows PowerShell:**
    ```powershell
    Get-Content .env | ForEach-Object {
        if ($_ -match '^\s*#' -or -not $_) { return }
@@ -77,6 +79,15 @@ This project adheres to a Code of Conduct that all contributors are expected to 
        [Environment]::SetEnvironmentVariable($name, $value, 'Process')
    }
 
+   python rag_builder.py
+   ```
+   
+   **Linux/Mac:**
+   ```bash
+   # load variables from .env into the current shell
+   export $(grep -v '^#' .env | xargs)
+
+   # now run your script
    python rag_builder.py
    ```
 

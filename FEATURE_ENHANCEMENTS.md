@@ -228,8 +228,8 @@ System Info:
 **Purpose**: Easy one-click launch on all platforms.
 
 **Files**:
+- `start_gui.bat` - Windows launcher (primary)
 - `start_gui.sh` - Linux/Mac launcher
-- `start_gui.bat` - Windows launcher
 
 **Features**:
 - ✅ Automatic virtual environment creation
@@ -240,15 +240,15 @@ System Info:
 
 **Usage**:
 
+*Windows*:
+```cmd
+start_gui.bat
+```
+
 *Linux/Mac*:
 ```bash
 chmod +x start_gui.sh
 ./start_gui.sh
-```
-
-*Windows*:
-```cmd
-start_gui.bat
 ```
 
 ### 7. Comprehensive Testing (`test_gui.py`)

@@ -2,6 +2,8 @@
 
 A **2026 Gold Standard** Python-based Retrieval-Augmented Generation (RAG) system for querying BakkesMod SDK documentation. Built for autonomous AI agents with enterprise-grade observability, cost optimization, and reliability.
 
+> **Platform Note:** This project is optimized for **Windows 11** as the primary development platform (since BakkesMod is a Windows-only Rocket League modification framework). The RAG system itself is cross-platform and supports Linux/Mac for development purposes.
+
 ## 🏆 2026 Gold Standard Features
 
 ### Cost Efficiency
@@ -92,6 +94,7 @@ See [CODE_GENERATION_GUIDE.md](docs/CODE_GENERATION_GUIDE.md) for full documenta
 
 ### Prerequisites
 
+- **Windows 11** (primary platform) or Linux/Mac (for RAG development)
 - Python 3.8+
 - API keys for your chosen LLM provider (OpenAI, Gemini, or Anthropic)
 
@@ -104,7 +107,7 @@ cd BakkesMod-RAG-Documentation
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+venv\Scripts\activate  # On Linux/Mac: source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -114,6 +117,12 @@ pip install -r requirements.txt
 
 Create a `.env` file from the example:
 
+**Windows:**
+```cmd
+copy .env.example .env
+```
+
+**Linux/Mac:**
 ```bash
 cp .env.example .env
 ```
@@ -138,14 +147,14 @@ GOOGLE_API_KEY=your_google_key_here
 
 ### Launch the GUI
 
-**Linux/Mac:**
-```bash
-./start_gui.sh
-```
-
 **Windows:**
 ```cmd
 start_gui.bat
+```
+
+**Linux/Mac:**
+```bash
+./start_gui.sh
 ```
 
 **Or manually:**

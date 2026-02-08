@@ -5,12 +5,23 @@
 ### Installation
 
 1. **Clone the repository:**
-   ```bash
+   ```cmd
    git clone https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation.git
    cd BakkesMod-RAG-Documentation
    ```
 
 2. **Set up environment:**
+   
+   **Windows:**
+   ```cmd
+   REM Copy environment template
+   copy .env.example .env
+   
+   REM Edit .env and add your API keys
+   REM Required: OPENAI_API_KEY, ANTHROPIC_API_KEY
+   ```
+   
+   **Linux/Mac:**
    ```bash
    # Copy environment template
    cp .env.example .env
@@ -21,14 +32,14 @@
 
 3. **Launch the GUI:**
    
-   **Linux/Mac:**
-   ```bash
-   ./start_gui.sh
-   ```
-   
    **Windows:**
    ```cmd
    start_gui.bat
+   ```
+   
+   **Linux/Mac:**
+   ```bash
+   ./start_gui.sh
    ```
    
    The GUI will automatically open in your browser at `http://localhost:7860`
