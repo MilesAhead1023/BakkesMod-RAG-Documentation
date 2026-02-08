@@ -35,13 +35,9 @@ pip install -r requirements.txt
 
 **Windows PowerShell:**
 ```powershell
-# Required for all builds
+# Required API keys (all three are required for full functionality)
 $env:OPENAI_API_KEY="sk-..."
-
-# Optional: for Anthropic reranking
 $env:ANTHROPIC_API_KEY="sk-ant-..."
-
-# Optional: for Gemini knowledge graphs
 $env:GOOGLE_API_KEY="..."
 
 # Optional: custom storage location
@@ -50,18 +46,16 @@ $env:RAG_STORAGE_DIR="./custom_storage"
 
 **Linux/Mac:**
 ```bash
-# Required for all builds
+# Required API keys (all three are required for full functionality)
 export OPENAI_API_KEY="sk-..."
-
-# Optional: for Anthropic reranking
 export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Optional: for Gemini knowledge graphs
 export GOOGLE_API_KEY="..."
 
 # Optional: custom storage location
 export RAG_STORAGE_DIR="./custom_storage"
 ```
+
+**Note:** All three API keys (OpenAI, Anthropic, and Google) are required by `rag_sentinel.py` and integration tests. Individual scripts may work with a subset, but for complete functionality, configure all three keys.
 
 ### 3. Prepare Documentation
 
@@ -74,7 +68,7 @@ dir docs\*.md /s
 
 **Linux/Mac:**
 ```bash
-ls -R docs/*.md
+find docs -name "*.md"
 ```
 
 ## Usage

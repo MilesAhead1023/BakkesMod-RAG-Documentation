@@ -70,9 +70,17 @@ See [BUILD_EXE_GUIDE.md](BUILD_EXE_GUIDE.md) for detailed build instructions.
    ```
 
 2. **Configure environment:**
+   
+   **Windows:**
    ```cmd
    copy .env.example .env
    REM Edit .env and add your API keys
+   ```
+   
+   **Linux/Mac:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your API keys
    ```
 
 3. **Launch GUI:**

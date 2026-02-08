@@ -100,6 +100,21 @@ See [CODE_GENERATION_GUIDE.md](docs/CODE_GENERATION_GUIDE.md) for full documenta
 
 ### Installation
 
+**Windows:**
+```cmd
+REM Clone the repository
+git clone https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation.git
+cd BakkesMod-RAG-Documentation
+
+REM Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+REM Install dependencies
+pip install -r requirements.txt
+```
+
+**Linux/Mac:**
 ```bash
 # Clone the repository
 git clone https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation.git
@@ -107,7 +122,7 @@ cd BakkesMod-RAG-Documentation
 
 # Create virtual environment
 python -m venv venv
-venv\Scripts\activate  # On Linux/Mac: source venv/bin/activate
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
