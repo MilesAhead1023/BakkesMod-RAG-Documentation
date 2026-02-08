@@ -2,8 +2,11 @@
 
 This guide covers deploying the BakkesMod RAG Documentation system for production use.
 
+> **Platform Note:** Optimized for **Windows 11** as the primary platform. Docker deployment supports all platforms.
+
 ## Prerequisites
 
+- **Windows 11** (primary platform) or Linux/Mac (for development)
 - Python 3.12+
 - Docker and Docker Compose (for containerized deployment)
 - API keys for:
@@ -15,13 +18,27 @@ This guide covers deploying the BakkesMod RAG Documentation system for productio
 
 ### 1. Clone and Setup
 
+**Windows:**
+```cmd
+git clone https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation.git
+cd BakkesMod-RAG-Documentation
+
+REM Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+REM Install dependencies
+pip install -r requirements.txt
+```
+
+**Linux/Mac:**
 ```bash
 git clone https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation.git
 cd BakkesMod-RAG-Documentation
 
 # Create virtual environment
 python3.12 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -29,6 +46,12 @@ pip install -r requirements.txt
 
 ### 2. Configure Environment
 
+**Windows:**
+```cmd
+copy .env.example .env
+```
+
+**Linux/Mac:**
 ```bash
 cp .env.example .env
 ```
