@@ -183,23 +183,11 @@ def create_query_engine(
 
     node_postprocessors = []
 
-    # Optional Cohere reranker
-    if config.retriever.enable_reranker and config.cohere_api_key:
-        try:
-            from llama_index.postprocessor.cohere_rerank import CohereRerank
-
-            reranker = CohereRerank(
-                api_key=config.cohere_api_key,
-                model=config.retriever.reranker_model,
-                top_n=config.retriever.rerank_top_n,
-            )
+    # Reranker fallback chain: tries each backend in preference order
+    if config.retriever.enable_reranker:
+        reranker = _get_reranker(config)
+        if reranker is not None:
             node_postprocessors.append(reranker)
-            print("[RETRIEVAL] Neural reranker enabled (Cohere)")
-            logger.info("Cohere reranker enabled")
-        except ImportError:
-            logger.warning("Cohere reranker not available")
-        except Exception as e:
-            logger.warning("Failed to initialize Cohere reranker: %s", e)
 
     query_engine = RetrieverQueryEngine.from_args(
         fusion_retriever,
@@ -208,3 +196,66 @@ def create_query_engine(
     )
 
     return query_engine
+
+
+def _get_reranker(config: RAGConfig):
+    """Try each reranker backend in preference order, return first that works.
+
+    Fallback chain defined by config.retriever.reranker_preference.
+    Default order: BAAI/BGE (free, local) → FlashRank (free, lightweight)
+    → Cohere (paid API).
+
+    Returns:
+        A LlamaIndex node postprocessor, or None if all fail.
+    """
+    top_n = config.retriever.rerank_top_n
+
+    for backend in config.retriever.reranker_preference:
+        try:
+            if backend == "bge":
+                from llama_index.postprocessor.flag_embedding_reranker import (
+                    FlagEmbeddingReranker,
+                )
+
+                reranker = FlagEmbeddingReranker(
+                    model=config.retriever.bge_reranker_model,
+                    top_n=top_n,
+                )
+                print(f"[RETRIEVAL] Neural reranker enabled (BGE: {config.retriever.bge_reranker_model})")
+                logger.info("BGE reranker enabled: %s", config.retriever.bge_reranker_model)
+                return reranker
+
+            elif backend == "flashrank":
+                from llama_index.postprocessor.flashrank_rerank import FlashRankRerank
+
+                reranker = FlashRankRerank(
+                    top_n=top_n,
+                    model=config.retriever.flashrank_model,
+                )
+                print("[RETRIEVAL] Neural reranker enabled (FlashRank)")
+                logger.info("FlashRank reranker enabled: %s", config.retriever.flashrank_model)
+                return reranker
+
+            elif backend == "cohere":
+                if not config.cohere_api_key:
+                    logger.info("Cohere reranker skipped — no API key")
+                    continue
+                from llama_index.postprocessor.cohere_rerank import CohereRerank
+
+                reranker = CohereRerank(
+                    api_key=config.cohere_api_key,
+                    model=config.retriever.reranker_model,
+                    top_n=top_n,
+                )
+                print("[RETRIEVAL] Neural reranker enabled (Cohere)")
+                logger.info("Cohere reranker enabled")
+                return reranker
+
+        except ImportError:
+            logger.warning("Reranker '%s' package not installed, trying next", backend)
+        except Exception as e:
+            logger.warning("Reranker '%s' failed to initialize: %s, trying next", backend, e)
+
+    logger.warning("No reranker available — proceeding without reranking")
+    print("[RETRIEVAL] No reranker available — proceeding without reranking")
+    return None

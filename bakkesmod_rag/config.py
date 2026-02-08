@@ -67,7 +67,12 @@ class RetrieverConfig(BaseModel):
     fusion_num_queries: int = 4
 
     enable_reranker: bool = True
-    reranker_model: str = "rerank-english-v3.0"
+    reranker_preference: list[Literal["bge", "flashrank", "cohere"]] = [
+        "bge", "flashrank", "cohere"
+    ]
+    reranker_model: str = "rerank-english-v3.0"  # Cohere model
+    bge_reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    flashrank_model: str = "ms-marco-MiniLM-L-12-v2"
     rerank_top_n: int = 5
 
     enable_llm_rewrite: bool = True
