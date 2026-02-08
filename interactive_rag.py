@@ -349,6 +349,7 @@ def display_help():
     print("\nCommands:")
     print("  help   - Show this help message")
     print("  stats  - Show session statistics")
+    print("  /generate <requirements> - Generate plugin code using RAG + LLM")
     print("  quit   - Exit the program (or Ctrl+C)")
     print("=" * 80)
 
@@ -402,6 +403,42 @@ def main():
 
             if query.lower() == 'help':
                 display_help()
+                continue
+
+            if query.lower().startswith('/generate ') or query.lower().startswith('/code '):
+                # Extract requirements
+                requirements = query.split(' ', 1)[1] if ' ' in query else ""
+
+                if not requirements:
+                    print("[ERROR] Usage: /generate <plugin requirements>")
+                    continue
+
+                log(f"Generating code for: {requirements[:60]}...")
+
+                from code_generator import CodeGenerator
+                generator = CodeGenerator()
+
+                try:
+                    result = generator.generate_plugin_with_rag(requirements)
+
+                    print("\n" + "=" * 80)
+                    print("[GENERATED CODE]")
+                    print("=" * 80)
+
+                    print("\n--- HEADER FILE (.h) ---")
+                    print(result["header"])
+
+                    print("\n--- IMPLEMENTATION FILE (.cpp) ---")
+                    print(result["implementation"])
+
+                    print("\n" + "=" * 80)
+                    print("[SAVE CODE]")
+                    print("Copy the code above to your plugin files")
+                    print("=" * 80)
+
+                except Exception as e:
+                    log(f"Code generation failed: {e}", "ERROR")
+
                 continue
 
             if query.lower() == 'stats':
