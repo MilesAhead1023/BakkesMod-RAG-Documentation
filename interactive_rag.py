@@ -153,7 +153,7 @@ def build_rag_system():
     nodes = parser.get_nodes_from_documents(documents)
 
     # Build/load index
-    storage_dir = "rag_storage_bakkesmod"  # New storage for BakkesMod-only docs
+    storage_dir = "rag_storage"
     from pathlib import Path
     storage_path = Path(storage_dir)
 
