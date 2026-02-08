@@ -59,6 +59,35 @@ A **2026 Gold Standard** Python-based Retrieval-Augmented Generation (RAG) syste
 
 See [PHASE1_COMPLETE.md](PHASE1_COMPLETE.md) and [PHASE2_COMPLETE.md](PHASE2_COMPLETE.md) for details.
 
+## 🤖 Code Generation Mode (NEW - 2026-02-07)
+
+Transform from documentation assistant to code generation assistant!
+
+### Generate Complete Plugins
+
+```bash
+python interactive_rag.py
+
+[QUERY] > /generate Create a plugin that hooks goal events and logs scorer info
+```
+
+**Generates:**
+- Complete .h and .cpp files
+- Proper BakkesMod API usage
+- Event hooks with correct event names
+- Syntax-validated code
+- Ready to compile and use
+
+### Features
+
+- **RAG-Enhanced:** Uses SDK documentation to generate accurate API calls
+- **Validated:** Automatic syntax and API validation
+- **Complete Projects:** Generate full plugin structure with CMake and README
+- **ImGui Support:** Generate UI code for settings windows
+- **Best Practices:** Follows BakkesMod conventions automatically
+
+See [CODE_GENERATION_GUIDE.md](docs/CODE_GENERATION_GUIDE.md) for full documentation.
+
 ## Quick Start
 
 ### Prerequisites
