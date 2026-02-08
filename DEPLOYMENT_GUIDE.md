@@ -6,12 +6,49 @@ This guide covers deploying the BakkesMod RAG GUI application for various enviro
 
 ## Table of Contents
 
-1. [Local Development](#local-development)
-2. [Docker Deployment](#docker-deployment)
-3. [Production Deployment](#production-deployment)
-4. [Cloud Deployment](#cloud-deployment)
-5. [Security Considerations](#security-considerations)
-6. [Monitoring & Maintenance](#monitoring--maintenance)
+1. [Windows Executable (Easiest)](#windows-executable)
+2. [Local Development](#local-development)
+3. [Docker Deployment](#docker-deployment)
+4. [Production Deployment](#production-deployment)
+5. [Cloud Deployment](#cloud-deployment)
+6. [Security Considerations](#security-considerations)
+7. [Monitoring & Maintenance](#monitoring--maintenance)
+
+---
+
+## Windows Executable
+
+**Easiest option for Windows users - No Python installation required!**
+
+### For End Users
+
+1. **Download the pre-built executable:**
+   - Get `BakkesMod_RAG_GUI.zip` from [GitHub Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases)
+   - Extract to your desired location
+
+2. **Configure API keys:**
+   ```cmd
+   copy .env.example .env
+   notepad .env
+   ```
+   Add your OpenAI, Anthropic, and Google API keys
+
+3. **Run:**
+   ```cmd
+   BakkesMod_RAG_GUI.exe
+   ```
+
+See [EXE_USER_GUIDE.md](EXE_USER_GUIDE.md) for detailed instructions.
+
+### For Developers (Building from Source)
+
+Build your own executable:
+
+```cmd
+build_exe.bat
+```
+
+See [BUILD_EXE_GUIDE.md](BUILD_EXE_GUIDE.md) for detailed build instructions.
 
 ---
 
