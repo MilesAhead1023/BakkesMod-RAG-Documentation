@@ -47,7 +47,7 @@ def build_rag_system():
         load_index_from_storage,
         Document
     )
-    from llama_index.core.node_parser import MarkdownNodeParser
+    from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
     from llama_index.llms.anthropic import Anthropic
     from llama_index.embeddings.openai import OpenAIEmbedding
     from llama_index.retrievers.bm25 import BM25Retriever
@@ -132,25 +132,44 @@ def build_rag_system():
     if not llm_configured:
         raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
 
-    # Load documents - BakkesMod SDK only
-    reader = SimpleDirectoryReader(
-        input_dir="docs_bakkesmod_only",
-        required_exts=[".md"],
-        recursive=True,
-        filename_as_id=True
-    )
-    documents = reader.load_data()
+    # Load documents - BakkesMod SDK docs + templates
+    input_dirs = ["docs_bakkesmod_only", "templates"]
+    all_documents = []
+    for input_dir in input_dirs:
+        if not os.path.isdir(input_dir):
+            log(f"Directory '{input_dir}' not found, skipping", "WARNING")
+            continue
+        reader = SimpleDirectoryReader(
+            input_dir=input_dir,
+            required_exts=[".md", ".h", ".cpp"],
+            recursive=True,
+            filename_as_id=True
+        )
+        docs = reader.load_data()
+        log(f"Loaded {len(docs)} files from {input_dir}")
+        all_documents.extend(docs)
 
     # Clean
     cleaned_docs = []
-    for doc in documents:
+    for doc in all_documents:
         clean_text = "".join(filter(lambda x: x.isprintable() or x in "\n\r\t", doc.text))
         cleaned_docs.append(Document(text=clean_text, metadata=doc.metadata))
     documents = cleaned_docs
+    log(f"Total documents loaded: {len(documents)}")
 
-    # Parse
-    parser = MarkdownNodeParser()
-    nodes = parser.get_nodes_from_documents(documents)
+    # Parse - use appropriate parser based on file type
+    md_docs = [d for d in documents if d.metadata.get("file_path", "").endswith(".md")]
+    code_docs = [d for d in documents if d.metadata.get("file_path", "").endswith((".h", ".cpp"))]
+
+    nodes = []
+    if md_docs:
+        md_parser = MarkdownNodeParser()
+        nodes.extend(md_parser.get_nodes_from_documents(md_docs))
+        log(f"Parsed {len(md_docs)} markdown files")
+    if code_docs:
+        code_parser = SentenceSplitter(chunk_size=1024, chunk_overlap=128)
+        nodes.extend(code_parser.get_nodes_from_documents(code_docs))
+        log(f"Parsed {len(code_docs)} code files (.h/.cpp)")
 
     # Build/load index
     storage_dir = "rag_storage"
