@@ -67,41 +67,70 @@ def build_rag_system():
     Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", max_retries=3)
 
     # Configure LLM with automatic fallback chain
-    # Priority: Anthropic (best quality) -> Google Gemini (free tier) -> OpenAI GPT-4o-mini (cheap)
-    llm_configured = False
+    # Priority: Anthropic (premium) -> OpenRouter (FREE) -> Gemini (FREE) -> OpenAI (cheap)
+    # Each provider is verified with a live test call to catch credit exhaustion
 
-    # Try Anthropic first (best quality but paid)
+    def _try_llm(llm, name):
+        """Verify an LLM works by making a tiny test call."""
+        try:
+            response = llm.complete("Say OK")
+            if response and response.text:
+                return True
+        except Exception as e:
+            log(f"{name} test call failed: {str(e)[:120]}", "WARNING")
+        return False
+
+    llm_configured = False
+    providers = []
+
+    # Build provider list in priority order (wrap instantiation in try/except)
     if os.getenv("ANTHROPIC_API_KEY"):
         try:
             from llama_index.llms.anthropic import Anthropic
-            Settings.llm = Anthropic(model="claude-sonnet-4-5", max_retries=3, temperature=0)
-            log("Using Anthropic Claude Sonnet 4.5 (primary)")
-            llm_configured = True
+            providers.append(("Anthropic Claude Sonnet 4.5 (primary)",
+                              Anthropic(model="claude-sonnet-4-5", max_retries=1, temperature=0)))
         except Exception as e:
-            log(f"Anthropic failed: {e}", "WARNING")
+            log(f"Could not initialize Anthropic: {e}", "WARNING")
 
-    # Fallback to Google Gemini (generous free tier)
-    if not llm_configured and os.getenv("GOOGLE_API_KEY"):
+    if os.getenv("OPENROUTER_API_KEY"):
+        try:
+            from llama_index.llms.openrouter import OpenRouter
+            providers.append(("OpenRouter / DeepSeek V3 (FREE)",
+                              OpenRouter(
+                                  model="deepseek/deepseek-chat-v3-0324",
+                                  api_key=os.getenv("OPENROUTER_API_KEY"),
+                                  temperature=0
+                              )))
+        except Exception as e:
+            log(f"Could not initialize OpenRouter: {e}", "WARNING")
+
+    if os.getenv("GOOGLE_API_KEY"):
         try:
             from llama_index.llms.google_genai import GoogleGenAI
-            Settings.llm = GoogleGenAI(model="gemini-2.0-flash-exp", temperature=0)
-            log("Using Google Gemini 2.0 Flash (fallback 1 - FREE TIER)", "WARNING")
-            llm_configured = True
+            providers.append(("Google Gemini 2.5 Flash (FREE)",
+                              GoogleGenAI(model="gemini-2.5-flash", temperature=0)))
         except Exception as e:
-            log(f"Google Gemini failed: {e}", "WARNING")
+            log(f"Could not initialize Gemini: {e}", "WARNING")
 
-    # Fallback to OpenAI GPT-4o-mini (very cheap)
-    if not llm_configured and os.getenv("OPENAI_API_KEY"):
+    if os.getenv("OPENAI_API_KEY"):
         try:
-            from llama_index.llms.openai import OpenAI
-            Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
-            log("Using OpenAI GPT-4o-mini (fallback 2 - cheap)", "WARNING")
-            llm_configured = True
+            from llama_index.llms.openai import OpenAI as OpenAILLM2
+            providers.append(("OpenAI GPT-4o-mini (cheap)",
+                              OpenAILLM2(model="gpt-4o-mini", temperature=0)))
         except Exception as e:
-            log(f"OpenAI failed: {e}", "WARNING")
+            log(f"Could not initialize OpenAI: {e}", "WARNING")
+
+    # Try each provider with a live verification call
+    for name, llm in providers:
+        log(f"Trying {name}...")
+        if _try_llm(llm, name):
+            Settings.llm = llm
+            log(f"Using {name}")
+            llm_configured = True
+            break
 
     if not llm_configured:
-        raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
+        raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
 
     # Load documents - BakkesMod SDK only
     reader = SimpleDirectoryReader(
@@ -137,16 +166,23 @@ def build_rag_system():
         try:
             kg_index = load_index_from_storage(storage_context, index_id="knowledge_graph")
             log("Loaded cached KG index")
-        except:
-            log("Building new KG index (this will take several minutes)...")
-            kg_index = KnowledgeGraphIndex.from_documents(
-                documents,
-                max_triplets_per_chunk=2,
-                show_progress=True
-            )
-            kg_index.set_index_id("knowledge_graph")
-            kg_index.storage_context.persist(persist_dir=storage_dir)
-            log("KG index built and cached")
+        except Exception as e:
+            log(f"KG index not in cache ({e}), building new one (this will take several minutes)...")
+
+            # Try building with current LLM, catch if it fails due to credits
+            try:
+                kg_index = KnowledgeGraphIndex.from_documents(
+                    documents,
+                    max_triplets_per_chunk=2,
+                    show_progress=True
+                )
+                kg_index.set_index_id("knowledge_graph")
+                kg_index.storage_context.persist(persist_dir=storage_dir)
+                log("KG index built and cached")
+            except Exception as kg_error:
+                log(f"Failed to build KG index: {str(kg_error)[:100]}", "ERROR")
+                log("Disabling KG retrieval - using 2-way fusion (Vector + BM25) only", "WARNING")
+                kg_index = None
     else:
         log("Building new indexes (this will take several minutes)...")
         vector_index = VectorStoreIndex(nodes, show_progress=True)
@@ -169,11 +205,19 @@ def build_rag_system():
     # Create retrievers
     vector_retriever = vector_index.as_retriever(similarity_top_k=5)
     bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=5)
-    kg_retriever = kg_index.as_retriever(similarity_top_k=3)
 
-    # Create query engine with 3-way fusion (Vector + BM25 + KG) + multi-query
+    # Build retriever list (conditionally include KG)
+    retrievers = [vector_retriever, bm25_retriever]
+    if kg_index is not None:
+        kg_retriever = kg_index.as_retriever(similarity_top_k=3)
+        retrievers.append(kg_retriever)
+        fusion_mode = "3-way fusion (Vector+BM25+KG)"
+    else:
+        fusion_mode = "2-way fusion (Vector+BM25)"
+
+    # Create query engine with fusion + multi-query
     fusion_retriever = QueryFusionRetriever(
-        [vector_retriever, bm25_retriever, kg_retriever],
+        retrievers,
         num_queries=4,  # Phase 2: Generate 4 query variants for better coverage
         mode="reciprocal_rerank",
         use_async=True
@@ -216,7 +260,7 @@ def build_rag_system():
     log("  Query rewriter: Synonym expansion enabled")
 
     reranker_status = " + Neural reranking" if node_postprocessors else ""
-    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion + multi-query{reranker_status}: Vector+BM25+KG × 4 variants)")
+    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, {fusion_mode} + multi-query{reranker_status} × 4 variants)")
     return query_engine, cache, query_rewriter, len(documents), len(nodes)
 
 def highlight_code_blocks(text: str) -> str:

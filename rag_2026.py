@@ -121,10 +121,24 @@ class GoldStandardRAG:
             for provider in self.config.llm.fallback_providers:
                 model = self.config.llm.fallback_models.get(provider)
 
-                if provider == "gemini" and self.config.google_api_key:
+                if provider == "openrouter" and self.config.openrouter_api_key:
+                    try:
+                        from llama_index.llms.openrouter import OpenRouter as OpenRouterLLM
+                        Settings.llm = OpenRouterLLM(
+                            model=model,
+                            api_key=self.config.openrouter_api_key,
+                            temperature=0
+                        )
+                        self.logger.logger.warning(f"Using fallback: OpenRouter {model} (FREE)")
+                        llm_configured = True
+                        break
+                    except Exception as e:
+                        self.logger.logger.warning(f"OpenRouter fallback failed: {e}")
+
+                elif provider == "gemini" and self.config.google_api_key:
                     try:
                         Settings.llm = GoogleGenerativeAI(model=model, temperature=0)
-                        self.logger.logger.warning(f"Using fallback: Gemini {model} (FREE TIER)")
+                        self.logger.logger.warning(f"Using fallback: Gemini {model} (FREE)")
                         llm_configured = True
                         break
                     except Exception as e:

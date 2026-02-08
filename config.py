@@ -37,15 +37,17 @@ class EmbeddingConfig(BaseModel):
 class LLMConfig(BaseModel):
     """Configuration for LLM providers."""
     # Primary LLM for query engine
-    primary_provider: Literal["openai", "anthropic", "gemini"] = "anthropic"
+    primary_provider: Literal["openai", "anthropic", "gemini", "openrouter"] = "anthropic"
     primary_model: str = "claude-3-5-sonnet-20240620"
 
     # Fallback chain (tried in order if primary fails)
-    fallback_providers: list[Literal["openai", "anthropic", "gemini"]] = ["gemini", "openai"]
+    # Priority: Paid premium → Free unlimited → Free limited → Cheap paid
+    fallback_providers: list[Literal["openai", "anthropic", "gemini", "openrouter"]] = ["openrouter", "gemini", "openai"]
     fallback_models: dict[str, str] = {
-        "gemini": "gemini-2.0-flash-exp",  # Free tier
-        "openai": "gpt-4o-mini",  # Very cheap
-        "anthropic": "claude-sonnet-4-5"
+        "openrouter": "deepseek/deepseek-chat-v3-0324",  # FREE via OpenRouter
+        "gemini": "gemini-2.5-flash",  # FREE - 15 req/min, 1M tokens/day
+        "openai": "gpt-4o-mini",  # CHEAP - $0.15/$0.60 per 1M tokens
+        "anthropic": "claude-sonnet-4-5"  # PREMIUM
     }
 
     # LLM for knowledge graph extraction (should be fast and cheap)
@@ -181,6 +183,7 @@ class RAGConfig(BaseModel):
     openai_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     anthropic_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
     google_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("GOOGLE_API_KEY"))
+    openrouter_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY"))  # Free tier available
     cohere_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("COHERE_API_KEY"))  # Phase 2: Neural reranking
     
     # Component configurations
@@ -194,7 +197,7 @@ class RAGConfig(BaseModel):
     production: ProductionConfig = Field(default_factory=ProductionConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     
-    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key", "cohere_api_key")
+    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key", "openrouter_api_key", "cohere_api_key")
     @classmethod
     def validate_api_keys(cls, v, info):
         """Warn if API keys are missing."""

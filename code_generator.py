@@ -35,41 +35,62 @@ class CodeGenerator:
         self.validator = CodeValidator()
 
     def _initialize_llm(self):
-        """Initialize LLM with automatic fallback chain."""
-        llm_configured = False
+        """Initialize LLM with automatic fallback chain and live verification."""
+        def _try_llm(llm, name):
+            """Verify an LLM works by making a tiny test call."""
+            try:
+                response = llm.complete("Say OK")
+                if response and response.text:
+                    return True
+            except Exception as e:
+                print(f"[WARNING] {name} test call failed: {str(e)[:120]}")
+            return False
 
-        # Try Anthropic first (best for code generation)
+        providers = []
+
+        # Build provider list in priority order
         if os.getenv("ANTHROPIC_API_KEY"):
             try:
                 from llama_index.llms.anthropic import Anthropic
-                Settings.llm = Anthropic(model="claude-sonnet-4-5", temperature=0, max_retries=3)
-                print("[INFO] Using Anthropic Claude Sonnet 4.5 for code generation")
-                llm_configured = True
+                providers.append(("Anthropic Claude Sonnet 4.5 (primary)",
+                                  Anthropic(model="claude-sonnet-4-5", temperature=0, max_retries=1)))
             except Exception as e:
-                print(f"[WARNING] Anthropic failed: {e}")
+                print(f"[WARNING] Could not initialize Anthropic: {e}")
 
-        # Fallback to Google Gemini (free tier, good at code)
-        if not llm_configured and os.getenv("GOOGLE_API_KEY"):
+        if os.getenv("OPENROUTER_API_KEY"):
+            try:
+                from llama_index.llms.openrouter import OpenRouter
+                providers.append(("OpenRouter / DeepSeek V3 (FREE)",
+                                  OpenRouter(model="deepseek/deepseek-chat-v3-0324",
+                                             api_key=os.getenv("OPENROUTER_API_KEY"), temperature=0)))
+            except Exception as e:
+                print(f"[WARNING] Could not initialize OpenRouter: {e}")
+
+        if os.getenv("GOOGLE_API_KEY"):
             try:
                 from llama_index.llms.google_genai import GoogleGenAI
-                Settings.llm = GoogleGenAI(model="gemini-2.0-flash-exp", temperature=0)
-                print("[WARNING] Using Google Gemini 2.0 Flash (FREE TIER fallback)")
-                llm_configured = True
+                providers.append(("Google Gemini 2.5 Flash (FREE)",
+                                  GoogleGenAI(model="gemini-2.5-flash", temperature=0)))
             except Exception as e:
-                print(f"[WARNING] Google Gemini failed: {e}")
+                print(f"[WARNING] Could not initialize Gemini: {e}")
 
-        # Fallback to OpenAI GPT-4o-mini (cheap)
-        if not llm_configured and os.getenv("OPENAI_API_KEY"):
+        if os.getenv("OPENAI_API_KEY"):
             try:
                 from llama_index.llms.openai import OpenAI
-                Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
-                print("[WARNING] Using OpenAI GPT-4o-mini (cheap fallback)")
-                llm_configured = True
+                providers.append(("OpenAI GPT-4o-mini (cheap)",
+                                  OpenAI(model="gpt-4o-mini", temperature=0)))
             except Exception as e:
-                print(f"[WARNING] OpenAI failed: {e}")
+                print(f"[WARNING] Could not initialize OpenAI: {e}")
 
-        if not llm_configured:
-            raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
+        # Try each provider with a live verification call
+        for name, llm in providers:
+            print(f"[INFO] Trying {name}...")
+            if _try_llm(llm, name):
+                Settings.llm = llm
+                print(f"[INFO] Using {name}")
+                return
+
+        raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
 
     def _load_index(self, storage_dir: str) -> Optional[VectorStoreIndex]:
         """Load RAG index from storage."""
