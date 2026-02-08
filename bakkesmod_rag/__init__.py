@@ -7,13 +7,52 @@ Provides query interface and code generation for plugin development.
 
 from bakkesmod_rag.config import RAGConfig, get_config, reload_config
 from bakkesmod_rag.engine import RAGEngine, QueryResult, CodeResult
+from bakkesmod_rag.resilience import (
+    CircuitBreaker,
+    CircuitBreakerOpen,
+    RateLimiter,
+    FallbackChain,
+    APICallManager,
+    RateLimitedCaller,
+    resilient_api_call,
+)
+from bakkesmod_rag.observability import (
+    StructuredLogger,
+    PhoenixObserver,
+    MetricsCollector,
+    get_logger,
+    get_phoenix,
+    get_metrics,
+    initialize_observability,
+)
+from bakkesmod_rag.cost_tracker import CostTracker, get_tracker
 
 
 __all__ = [
+    # Core
     "RAGEngine",
     "RAGConfig",
     "QueryResult",
     "CodeResult",
     "get_config",
     "reload_config",
+    # Resilience
+    "CircuitBreaker",
+    "CircuitBreakerOpen",
+    "RateLimiter",
+    "FallbackChain",
+    "APICallManager",
+    "RateLimitedCaller",
+    "resilient_api_call",
+    # Observability
+    "StructuredLogger",
+    "PhoenixObserver",
+    "MetricsCollector",
+    "get_logger",
+    "get_phoenix",
+    "get_metrics",
+    "initialize_observability",
+    # Cost tracking
+    "CostTracker",
+    "get_tracker",
 ]

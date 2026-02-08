@@ -148,20 +148,43 @@ def main():
                     result = engine.generate_code(requirements)
 
                     print("\n" + "=" * 80)
-                    print("[GENERATED CODE]")
+                    print("[GENERATED PLUGIN PROJECT]")
                     print("=" * 80)
 
-                    print("\n--- HEADER FILE (.h) ---")
-                    print(result.header)
+                    # Show detected features
+                    if result.features_used:
+                        print(f"\n[FEATURES DETECTED] {', '.join(result.features_used)}")
 
-                    print("\n--- IMPLEMENTATION FILE (.cpp) ---")
-                    print(result.implementation)
+                    # Show all project files
+                    if result.project_files:
+                        print(f"\n[PROJECT FILES] {len(result.project_files)} files generated:")
+                        for fname in sorted(result.project_files.keys()):
+                            size = len(result.project_files[fname])
+                            print(f"  - {fname} ({size} bytes)")
 
+                        # Show main plugin files in detail
+                        for fname in sorted(result.project_files.keys()):
+                            if fname.endswith((".h", ".cpp")) and fname not in (
+                                "pch.h", "pch.cpp", "logging.h", "version.h",
+                                "resource.h", "GuiBase.h", "GuiBase.cpp",
+                            ):
+                                print(f"\n--- {fname} ---")
+                                print(result.project_files[fname])
+                    else:
+                        # Fallback: show header/implementation directly
+                        print("\n--- HEADER FILE (.h) ---")
+                        print(result.header)
+                        print("\n--- IMPLEMENTATION FILE (.cpp) ---")
+                        print(result.implementation)
+
+                    # Validation results
                     print("\n" + "=" * 80)
                     if result.validation and not result.validation.get("valid", True):
                         print("[VALIDATION WARNINGS]")
                         for err in result.validation.get("errors", []):
                             print(f"  - {err}")
+                        for warn in result.validation.get("warnings", []):
+                            print(f"  - (warn) {warn}")
                     else:
                         print("[VALIDATION] All checks passed")
                     print("=" * 80)

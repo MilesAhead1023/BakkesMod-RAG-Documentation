@@ -159,19 +159,34 @@ def generate_code(requirements: str):
         last_generated_code = {
             "header": result.header,
             "implementation": result.implementation,
+            "project_files": result.project_files,
             "requirements": requirements,
             "timestamp": datetime.now().isoformat(),
         }
 
-        status = "Code generated successfully!\n\n"
+        status = "**Code generated successfully!**\n\n"
+
+        # Show features detected
+        if result.features_used:
+            status += f"**Features detected:** {', '.join(result.features_used)}\n\n"
+
+        # Show project file list
+        if result.project_files:
+            status += f"**Project files:** {len(result.project_files)} files generated\n"
+            for fname in sorted(result.project_files.keys()):
+                size = len(result.project_files[fname])
+                status += f"- `{fname}` ({size} bytes)\n"
+            status += "\n"
 
         validation = result.validation
         if validation and not validation.get("valid", True):
-            status += "Validation warnings:\n"
+            status += "**Validation warnings:**\n"
             for err in validation.get("errors", []):
-                status += f"  - {err}\n"
+                status += f"- {err}\n"
+            for warn in validation.get("warnings", []):
+                status += f"- (warn) {warn}\n"
         else:
-            status += "All code validation checks passed!"
+            status += "**All code validation checks passed!**"
 
         return result.header, result.implementation, status
 
@@ -182,8 +197,11 @@ def generate_code(requirements: str):
 def export_code(plugin_name: str = "MyPlugin") -> str:
     """Export the last generated code to files on disk.
 
+    Exports all project files (header, implementation, pch, version,
+    logging, GuiBase, resource, .rc, .props, .vcxproj) when available.
+
     Args:
-        plugin_name: Name used for the class and file names.
+        plugin_name: Name used for the output directory.
 
     Returns:
         Status message.
@@ -201,20 +219,33 @@ def export_code(plugin_name: str = "MyPlugin") -> str:
         output_dir = Path("generated_plugins") / plugin_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        header_path = output_dir / f"{plugin_name}.h"
-        with open(header_path, "w", encoding="utf-8") as f:
-            f.write(last_generated_code["header"])
+        project_files = last_generated_code.get("project_files", {})
+        files_written = []
 
-        impl_path = output_dir / f"{plugin_name}.cpp"
-        with open(impl_path, "w", encoding="utf-8") as f:
-            f.write(last_generated_code["implementation"])
+        if project_files:
+            # Export all project files
+            for fname, content in project_files.items():
+                file_path = output_dir / fname
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                files_written.append(fname)
+        else:
+            # Fallback: just header + implementation
+            header_path = output_dir / f"{plugin_name}.h"
+            with open(header_path, "w", encoding="utf-8") as f:
+                f.write(last_generated_code["header"])
+            files_written.append(f"{plugin_name}.h")
 
+            impl_path = output_dir / f"{plugin_name}.cpp"
+            with open(impl_path, "w", encoding="utf-8") as f:
+                f.write(last_generated_code["implementation"])
+            files_written.append(f"{plugin_name}.cpp")
+
+        file_list = "\n".join(f"- {f}" for f in sorted(files_written))
         return (
             f"Code exported successfully!\n\n"
             f"Location: {output_dir.absolute()}\n\n"
-            f"Files created:\n"
-            f"- {plugin_name}.h\n"
-            f"- {plugin_name}.cpp"
+            f"Files created ({len(files_written)}):\n{file_list}"
         )
 
     except Exception as e:

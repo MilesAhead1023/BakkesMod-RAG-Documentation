@@ -22,7 +22,12 @@ from bakkesmod_rag.cache import SemanticCache
 from bakkesmod_rag.query_rewriter import QueryRewriter
 from bakkesmod_rag.confidence import calculate_confidence
 from bakkesmod_rag.cost_tracker import CostTracker
-from bakkesmod_rag.observability import StructuredLogger
+from bakkesmod_rag.observability import (
+    StructuredLogger,
+    PhoenixObserver,
+    MetricsCollector,
+)
+from bakkesmod_rag.resilience import APICallManager
 from bakkesmod_rag.document_loader import load_documents, parse_nodes
 from bakkesmod_rag.retrieval import (
     build_or_load_indexes,
@@ -70,14 +75,18 @@ class CodeResult:
     Attributes:
         header: Generated C++ header file content.
         implementation: Generated C++ implementation file content.
+        project_files: Dict mapping filename to content for ALL project files.
         explanation: The original natural-language description that was used.
-        validation: Validation dict from ``CodeValidator.validate_syntax``.
+        validation: Validation dict from ``CodeValidator.validate_project``.
+        features_used: List of feature flags that were detected/enabled.
     """
 
     header: str
     implementation: str
+    project_files: Dict[str, str]
     explanation: str
-    validation: dict  # from CodeValidator
+    validation: dict
+    features_used: List[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +115,11 @@ class RAGEngine:
 
         # Observability -------------------------------------------------
         self.logger = StructuredLogger("rag_engine", self.config.observability)
+        self.phoenix = PhoenixObserver(self.config.observability)
+        self.metrics = MetricsCollector(self.config.observability)
+
+        # Resilience ----------------------------------------------------
+        self.api_manager = APICallManager(self.config.production)
 
         # LLM + Embeddings ---------------------------------------------
         self.llm = get_llm(self.config)
@@ -139,14 +153,19 @@ class RAGEngine:
         self.fusion_retriever = create_fusion_retriever(
             self.indexes, self.nodes, self.config
         )
-        self.query_engine = create_query_engine(
+
+        # Two query engines: sync for query(), streaming for query_streaming()
+        self.query_engine_sync = create_query_engine(
+            self.fusion_retriever, self.config, streaming=False
+        )
+        self.query_engine_streaming = create_query_engine(
             self.fusion_retriever, self.config, streaming=True
         )
 
-        # Code generator ------------------------------------------------
+        # Code generator (uses sync engine for RAG lookups) -------------
         self.code_gen = BakkesModCodeGenerator(
             llm=self.llm,
-            query_engine=self.query_engine,
+            query_engine=self.query_engine_sync,
         )
 
         print(
@@ -182,6 +201,7 @@ class RAGEngine:
             A ``QueryResult`` with the answer, sources, and metadata.
         """
         start_time = time.time()
+        self.logger.log_query(question)
 
         expanded_query = self.rewriter.expand_with_synonyms(question)
 
@@ -191,6 +211,9 @@ class RAGEngine:
             if cache_result:
                 response_text, similarity, metadata = cache_result
                 query_time = time.time() - start_time
+                self.logger.log_cache_hit(question, similarity)
+                self.metrics.record_cache_hit()
+                self.metrics.record_query("cache_hit", query_time)
                 return QueryResult(
                     answer=response_text,
                     sources=[],
@@ -204,39 +227,59 @@ class RAGEngine:
                     expanded_query=expanded_query,
                 )
 
-        # -- Execute query (non-streaming for programmatic use) ---------
-        response = self.query_engine.query(expanded_query)
-        query_time = time.time() - start_time
+        self.metrics.record_cache_miss()
 
-        answer = str(response)
+        # -- Execute query (non-streaming via sync engine) --------------
+        try:
+            response = self.query_engine_sync.query(expanded_query)
+            query_time = time.time() - start_time
 
-        # -- Confidence scoring -----------------------------------------
-        confidence, label, explanation = calculate_confidence(
-            response.source_nodes
-        )
+            answer = str(response)
 
-        # -- Extract source metadata ------------------------------------
-        sources: list[dict] = []
-        for node in response.source_nodes:
-            sources.append({
-                "file_name": node.node.metadata.get("file_name", "unknown"),
-                "score": node.score if hasattr(node, "score") else None,
-            })
+            # -- Confidence scoring -------------------------------------
+            confidence, label, explanation = calculate_confidence(
+                response.source_nodes
+            )
 
-        # -- Cache the response -----------------------------------------
-        if use_cache and self.config.cache.enabled:
-            self.cache.set(question, answer, response.source_nodes)
+            # -- Extract source metadata --------------------------------
+            sources: list[dict] = []
+            source_names: list[str] = []
+            for node in response.source_nodes:
+                fname = node.node.metadata.get("file_name", "unknown")
+                sources.append({
+                    "file_name": fname,
+                    "score": node.score if hasattr(node, "score") else None,
+                })
+                source_names.append(fname)
 
-        return QueryResult(
-            answer=answer,
-            sources=sources,
-            confidence=confidence,
-            confidence_label=label,
-            confidence_explanation=explanation,
-            query_time=query_time,
-            cached=False,
-            expanded_query=expanded_query,
-        )
+            # -- Log retrieval metrics ----------------------------------
+            self.logger.log_retrieval(
+                num_chunks=len(sources),
+                sources=source_names,
+                latency_ms=query_time * 1000,
+            )
+            self.metrics.record_retrieval(len(sources))
+            self.metrics.record_query("success", query_time)
+
+            # -- Cache the response -------------------------------------
+            if use_cache and self.config.cache.enabled:
+                self.cache.set(question, answer, response.source_nodes)
+
+            return QueryResult(
+                answer=answer,
+                sources=sources,
+                confidence=confidence,
+                confidence_label=label,
+                confidence_explanation=explanation,
+                query_time=query_time,
+                cached=False,
+                expanded_query=expanded_query,
+            )
+        except Exception as e:
+            query_time = time.time() - start_time
+            self.logger.log_error(e, {"query": question})
+            self.metrics.record_query("error", query_time)
+            raise
 
     # ---- streaming query -----------------------------------------------
 
@@ -266,6 +309,7 @@ class RAGEngine:
             Tuple of ``(token_generator, get_metadata_callable)``.
         """
         start_time = time.time()
+        self.logger.log_query(question, {"mode": "streaming"})
 
         expanded_query = self.rewriter.expand_with_synonyms(question)
 
@@ -275,6 +319,9 @@ class RAGEngine:
             if cache_result:
                 response_text, similarity, metadata = cache_result
                 query_time = time.time() - start_time
+                self.logger.log_cache_hit(question, similarity)
+                self.metrics.record_cache_hit()
+                self.metrics.record_query("cache_hit", query_time)
                 result = QueryResult(
                     answer=response_text,
                     sources=[],
@@ -293,8 +340,10 @@ class RAGEngine:
 
                 return cached_gen(), lambda: result
 
-        # -- Execute streaming query ------------------------------------
-        response = self.query_engine.query(expanded_query)
+        self.metrics.record_cache_miss()
+
+        # -- Execute streaming query (via streaming engine) -------------
+        response = self.query_engine_streaming.query(expanded_query)
 
         tokens_collected: list[str] = []
 
@@ -312,15 +361,25 @@ class RAGEngine:
             )
 
             sources: list[dict] = []
+            source_names: list[str] = []
             for node in response.source_nodes:
+                fname = node.node.metadata.get("file_name", "unknown")
                 sources.append({
-                    "file_name": node.node.metadata.get(
-                        "file_name", "unknown"
-                    ),
+                    "file_name": fname,
                     "score": (
                         node.score if hasattr(node, "score") else None
                     ),
                 })
+                source_names.append(fname)
+
+            # Log retrieval metrics
+            self.logger.log_retrieval(
+                num_chunks=len(sources),
+                sources=source_names,
+                latency_ms=query_time * 1000,
+            )
+            self.metrics.record_retrieval(len(sources))
+            self.metrics.record_query("success", query_time)
 
             # Cache the fully-collected response
             if use_cache and self.config.cache.enabled:
@@ -342,24 +401,25 @@ class RAGEngine:
     # ---- code generation -----------------------------------------------
 
     def generate_code(self, description: str) -> CodeResult:
-        """Generate BakkesMod plugin code using RAG context.
+        """Generate a complete BakkesMod plugin project using RAG context.
+
+        Uses the full pipeline: RAG retrieval -> feature detection ->
+        LLM generation -> project scaffolding -> validation.
 
         Args:
             description: Natural language description of the desired plugin.
 
         Returns:
-            A ``CodeResult`` containing the header, implementation,
-            explanation, and validation results.
+            A ``CodeResult`` containing all project files, validation
+            results, and detected features.
         """
-        result = self.code_gen.generate_plugin_with_rag(description)
-
-        validation = self.code_gen.validator.validate_syntax(
-            result.get("implementation", "")
-        )
+        result = self.code_gen.generate_full_plugin_with_rag(description)
 
         return CodeResult(
             header=result.get("header", ""),
             implementation=result.get("implementation", ""),
+            project_files=result.get("project_files", {}),
             explanation=description,
-            validation=validation,
+            validation=result.get("validation", {}),
+            features_used=result.get("features_used", []),
         )

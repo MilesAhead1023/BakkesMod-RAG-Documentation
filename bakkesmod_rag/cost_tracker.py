@@ -202,6 +202,17 @@ class CostTracker:
         date = date or datetime.now().strftime("%Y-%m-%d")
         return self.costs["by_date"].get(date, 0.0)
 
+    def reset_daily(self, date: Optional[str] = None):
+        """Reset costs for a specific date (or today).
+
+        Args:
+            date: Date string in ``YYYY-MM-DD`` format; defaults to today.
+        """
+        date = date or datetime.now().strftime("%Y-%m-%d")
+        with self.lock:
+            self.costs["by_date"][date] = 0.0
+            self._save_costs()
+
     def get_report(self, days: int = 7) -> str:
         """Generate a cost report for the last N days."""
         lines = ["=" * 60]
@@ -233,3 +244,28 @@ class CostTracker:
 
         lines.append("=" * 60)
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Singleton accessor
+# ---------------------------------------------------------------------------
+
+_tracker_instance: Optional[CostTracker] = None
+
+
+def get_tracker(config=None) -> CostTracker:
+    """Return the global ``CostTracker`` singleton.
+
+    Creates one on first call. Passing *config* on the first call
+    configures the tracker; subsequent calls return the cached instance.
+
+    Args:
+        config: Optional ``RAGConfig`` instance.
+
+    Returns:
+        The shared ``CostTracker`` instance.
+    """
+    global _tracker_instance
+    if _tracker_instance is None:
+        _tracker_instance = CostTracker(config=config)
+    return _tracker_instance

@@ -140,6 +140,135 @@ class CodeValidator:
 
         return errors
 
+    def validate_semantic(self, files: Dict[str, str]) -> Dict:
+        """Validate BakkesMod-specific semantic patterns across project files.
+
+        Checks for essential BakkesMod plugin patterns like the BAKKESMOD_PLUGIN
+        macro, proper includes, onLoad/onUnload implementations, and
+        _globalCvarManager declaration.
+
+        Args:
+            files: Dict mapping filename to file content (e.g.
+                ``{"plugin.h": "...", "plugin.cpp": "..."}``).
+
+        Returns:
+            Dict with ``valid`` (bool), ``errors`` (list), and ``warnings``
+            (list) describing what's missing.
+        """
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        # Combine all content for cross-file checks
+        all_content = "\n".join(files.values())
+
+        # Find the main .cpp file (implementation)
+        impl_files = {k: v for k, v in files.items() if k.endswith(".cpp") and k != "pch.cpp" and k != "GuiBase.cpp"}
+        header_files = {k: v for k, v in files.items() if k.endswith(".h") and k not in ("pch.h", "version.h", "logging.h", "resource.h", "GuiBase.h")}
+
+        # 1. Check pch.h include as first include in .cpp files
+        for fname, content in impl_files.items():
+            lines = [l.strip() for l in content.split("\n") if l.strip() and not l.strip().startswith("//")]
+            includes = [l for l in lines if l.startswith("#include")]
+            if includes and includes[0] != '#include "pch.h"':
+                warnings.append(
+                    f'{fname}: first #include should be "pch.h" '
+                    f'(found: {includes[0] if includes else "none"})'
+                )
+
+        # 2. Check BAKKESMOD_PLUGIN() macro present
+        if not re.search(r"BAKKESMOD_PLUGIN\s*\(", all_content):
+            errors.append("Missing BAKKESMOD_PLUGIN() macro in implementation")
+
+        # 3. Check onLoad() implementation
+        if not re.search(r"::onLoad\s*\(\s*\)", all_content):
+            errors.append("Missing onLoad() implementation")
+
+        # 4. Check _globalCvarManager declaration
+        if not re.search(r"_globalCvarManager", all_content):
+            warnings.append(
+                "Missing _globalCvarManager declaration "
+                "(needed for LOG/DEBUGLOG macros)"
+            )
+
+        # 5. Check #pragma once or include guards in headers
+        for fname, content in header_files.items():
+            has_pragma = "#pragma once" in content
+            has_guard = bool(re.search(r"#ifndef\s+\w+_H", content, re.IGNORECASE))
+            if not has_pragma and not has_guard:
+                warnings.append(f"{fname}: missing #pragma once or include guard")
+
+        # 6. Check plugin class inherits from BakkesModPlugin
+        if not re.search(r":\s*public\s+BakkesMod::Plugin::BakkesModPlugin", all_content):
+            errors.append(
+                "Plugin class must inherit from "
+                "BakkesMod::Plugin::BakkesModPlugin"
+            )
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+        }
+
+    def validate_project(self, project_files: Dict[str, str]) -> Dict:
+        """Full project validation: syntax + semantic + cross-file consistency.
+
+        Runs syntax validation on each code file, then semantic validation
+        across all files, and finally checks cross-file consistency (e.g.
+        header/implementation matching).
+
+        Args:
+            project_files: Dict mapping filename to file content for the
+                entire project.
+
+        Returns:
+            Dict with ``valid`` (bool), ``errors`` (list), ``warnings``
+            (list), and ``syntax_results`` (per-file syntax validation).
+        """
+        all_errors: List[str] = []
+        all_warnings: List[str] = []
+        syntax_results: Dict[str, Dict] = {}
+
+        # 1. Syntax check each code file
+        for fname, content in project_files.items():
+            if fname.endswith((".cpp", ".h")):
+                result = self.validate_syntax(content)
+                syntax_results[fname] = result
+                if not result["valid"]:
+                    for err in result["errors"]:
+                        all_errors.append(f"{fname}: {err}")
+
+        # 2. Semantic validation
+        semantic = self.validate_semantic(project_files)
+        all_errors.extend(semantic["errors"])
+        all_warnings.extend(semantic["warnings"])
+
+        # 3. Cross-file consistency: check .h/.cpp pairs exist
+        cpp_files = [f for f in project_files if f.endswith(".cpp")]
+        h_files = [f for f in project_files if f.endswith(".h")]
+
+        # Main plugin should have both .h and .cpp
+        plugin_cpps = [f for f in cpp_files if f not in ("pch.cpp", "GuiBase.cpp")]
+        plugin_hs = [f for f in h_files if f not in ("pch.h", "version.h", "logging.h", "resource.h", "GuiBase.h")]
+
+        if plugin_cpps and not plugin_hs:
+            all_warnings.append("Plugin has .cpp but no .h header file")
+        if plugin_hs and not plugin_cpps:
+            all_warnings.append("Plugin has .h header but no .cpp implementation")
+
+        # 4. Check essential support files
+        if "pch.h" not in project_files:
+            all_warnings.append("Missing pch.h (precompiled header)")
+        if "version.h" not in project_files:
+            all_warnings.append("Missing version.h")
+
+        return {
+            "valid": len(all_errors) == 0,
+            "errors": all_errors,
+            "warnings": all_warnings,
+            "syntax_results": syntax_results,
+        }
+
 
 # ---------------------------------------------------------------------------
 # PluginTemplateEngine
@@ -150,7 +279,24 @@ class PluginTemplateEngine:
 
     These templates require no LLM calls -- they produce syntactically
     correct scaffolding that a developer (or an LLM) can fill in.
+
+    Supports two modes:
+    - **Simple**: ``generate_basic_plugin()`` for a minimal .h/.cpp pair.
+    - **Complete project**: ``generate_complete_project()`` for all 12 files
+      matching the official BakkesMod plugin template structure.
+
+    Feature flags (passed to ``generate_complete_project``):
+    - ``settings_window`` — SettingsWindowBase inheritance + RenderSettings()
+    - ``plugin_window`` — PluginWindowBase inheritance + RenderWindow()
+    - ``cvars`` — registerCvar() boilerplate in onLoad()
+    - ``event_hooks`` — HookEvent() boilerplate
+    - ``drawable`` — RegisterDrawable() boilerplate
+    - ``imgui`` — ImGui rendering boilerplate
     """
+
+    # ------------------------------------------------------------------
+    # Backward-compatible simple generators
+    # ------------------------------------------------------------------
 
     def generate_basic_plugin(
         self, plugin_name: str, description: str
@@ -269,6 +415,578 @@ void {plugin_name}::onUnload()
 }
 """
         return code
+
+    # ------------------------------------------------------------------
+    # Complete project generation (all 12 files)
+    # ------------------------------------------------------------------
+
+    def generate_complete_project(
+        self,
+        plugin_name: str,
+        description: str = "A BakkesMod plugin",
+        features: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        """Generate a complete BakkesMod plugin project with all files.
+
+        Produces a full Visual Studio project matching the official BakkesMod
+        plugin template, with ``$projectname$`` substitution applied.
+
+        Args:
+            plugin_name: C++ class name / project name.
+            description: Short plugin description for the BAKKESMOD_PLUGIN macro.
+            features: Optional list of feature flags to enable. Supported:
+                ``"settings_window"``, ``"plugin_window"``, ``"cvars"``,
+                ``"event_hooks"``, ``"drawable"``, ``"imgui"``.
+
+        Returns:
+            Dict mapping filename to file content for all project files.
+        """
+        features = features or []
+        feat = set(features)
+
+        files: Dict[str, str] = {}
+
+        files[f"{plugin_name}.h"] = self._gen_plugin_h(plugin_name, feat)
+        files[f"{plugin_name}.cpp"] = self._gen_plugin_cpp(plugin_name, description, feat)
+        files["pch.h"] = self._gen_pch_h()
+        files["pch.cpp"] = self._gen_pch_cpp()
+        files["version.h"] = self._gen_version_h()
+        files["logging.h"] = self._gen_logging_h()
+        files["GuiBase.h"] = self._gen_guibase_h(plugin_name)
+        files["GuiBase.cpp"] = self._gen_guibase_cpp(plugin_name)
+        files["resource.h"] = self._gen_resource_h()
+        files[f"{plugin_name}.rc"] = self._gen_plugin_rc(plugin_name)
+        files["BakkesMod.props"] = self._gen_bakkesmod_props()
+        files[f"{plugin_name}.vcxproj"] = self._gen_vcxproj(plugin_name)
+
+        return files
+
+    # --- Individual file generators ---
+
+    def _gen_plugin_h(self, name: str, feat: set) -> str:
+        """Generate plugin header with conditional feature blocks."""
+        # Build inheritance list
+        bases = ["public BakkesMod::Plugin::BakkesModPlugin"]
+        settings_inherit = ""
+        window_inherit = ""
+        if "settings_window" in feat:
+            settings_inherit = "\n\t,public SettingsWindowBase"
+        if "plugin_window" in feat:
+            window_inherit = "\n\t,public PluginWindowBase"
+
+        # Build public methods
+        public_methods = ""
+        if "settings_window" in feat:
+            public_methods += "\n\tvoid RenderSettings() override;"
+        if "plugin_window" in feat:
+            public_methods += "\n\tvoid RenderWindow() override;"
+
+        return f'''#pragma once
+
+#include "GuiBase.h"
+#include "bakkesmod/plugin/bakkesmodplugin.h"
+#include "bakkesmod/plugin/pluginwindow.h"
+#include "bakkesmod/plugin/PluginSettingsWindow.h"
+
+#include "version.h"
+constexpr auto plugin_version = stringify(VERSION_MAJOR) "." stringify(VERSION_MINOR) "." stringify(VERSION_PATCH) "." stringify(VERSION_BUILD);
+
+
+class {name}: public BakkesMod::Plugin::BakkesModPlugin{settings_inherit}{window_inherit}
+{{
+
+\tvoid onLoad() override;
+\tvoid onUnload() override;
+
+public:{public_methods}
+}};
+'''
+
+    def _gen_plugin_cpp(self, name: str, description: str, feat: set) -> str:
+        """Generate plugin implementation with conditional feature blocks."""
+        on_load_body = "\t_globalCvarManager = cvarManager;\n"
+
+        if "cvars" in feat:
+            on_load_body += (
+                '\n\tauto cvar = cvarManager->registerCvar("'
+                f'{name}_enabled", "0", "Enable {name}", '
+                "true, true, 0, true, 1);\n"
+                "\tcvar.addOnValueChanged([this](std::string cvarName, "
+                "CVarWrapper newCvar) {\n"
+                '\t\tLOG("CVar {} changed to: {}", cvarName, '
+                "newCvar.getStringValue());\n"
+                "\t});\n"
+            )
+
+        if "event_hooks" in feat:
+            on_load_body += (
+                '\n\tgameWrapper->HookEvent("Function TAGame.Ball_TA.Explode", '
+                "[this](std::string eventName) {\n"
+                '\t\tLOG("Ball exploded!");\n'
+                "\t});\n"
+            )
+
+        if "drawable" in feat:
+            on_load_body += (
+                "\n\tgameWrapper->RegisterDrawable("
+                f"std::bind(&{name}::Render, this, "
+                "std::placeholders::_1));\n"
+            )
+
+        on_load_body += f'\n\tLOG("{name} loaded!");'
+
+        # Build render/settings methods
+        extra_methods = ""
+        if "settings_window" in feat:
+            extra_methods += f"""
+
+void {name}::RenderSettings()
+{{
+\tImGui::TextUnformatted("{name} Settings");
+\tImGui::Separator();
+
+\t// Add your settings UI here
+\tImGui::TextUnformatted("Configure {name} options below:");
+}}"""
+
+        if "plugin_window" in feat:
+            extra_methods += f"""
+
+void {name}::RenderWindow()
+{{
+\tImGui::TextUnformatted("{name}");
+\tImGui::Separator();
+
+\t// Add your window UI here
+\tImGui::TextUnformatted("Plugin window content goes here.");
+}}"""
+
+        if "drawable" in feat:
+            extra_methods += f"""
+
+void {name}::Render(CanvasWrapper canvas)
+{{
+\t// Add your drawable rendering here
+\tcanvas.SetColor(255, 255, 255, 255);
+}}"""
+
+        return f'''#include "pch.h"
+#include "{name}.h"
+
+
+BAKKESMOD_PLUGIN({name}, "{description}", plugin_version, PLUGINTYPE_FREEPLAY)
+
+std::shared_ptr<CVarManagerWrapper> _globalCvarManager;
+
+void {name}::onLoad()
+{{
+{on_load_body}
+}}
+
+void {name}::onUnload()
+{{
+\tLOG("{name} unloaded!");
+}}{extra_methods}
+'''
+
+    @staticmethod
+    def _gen_pch_h() -> str:
+        return '''#pragma once
+
+#define WIN32_LEAN_AND_MEAN
+#define _CRT_SECURE_NO_WARNINGS
+#include "bakkesmod/plugin/bakkesmodplugin.h"
+
+#include <string>
+#include <vector>
+#include <functional>
+#include <memory>
+
+#include "IMGUI/imgui.h"
+#include "IMGUI/imgui_stdlib.h"
+#include "IMGUI/imgui_searchablecombo.h"
+#include "IMGUI/imgui_rangeslider.h"
+
+#include "logging.h"
+'''
+
+    @staticmethod
+    def _gen_pch_cpp() -> str:
+        return '#include "pch.h"\n'
+
+    @staticmethod
+    def _gen_version_h() -> str:
+        return '''#pragma once
+#define VERSION_MAJOR 1
+#define VERSION_MINOR 0
+#define VERSION_PATCH 0
+#define VERSION_BUILD 0
+
+#define stringify(a) stringify_(a)
+#define stringify_(a) #a
+'''
+
+    @staticmethod
+    def _gen_logging_h() -> str:
+        return r'''// ReSharper disable CppNonExplicitConvertingConstructor
+#pragma once
+#include <string>
+#include <source_location>
+#include <format>
+#include <memory>
+
+#include "bakkesmod/wrappers/cvarmanagerwrapper.h"
+
+extern std::shared_ptr<CVarManagerWrapper> _globalCvarManager;
+constexpr bool DEBUG_LOG = false;
+
+
+struct FormatString
+{
+	std::string_view str;
+	std::source_location loc{};
+
+	FormatString(const char* str, const std::source_location& loc = std::source_location::current()) : str(str), loc(loc)
+	{
+	}
+
+	FormatString(const std::string&& str, const std::source_location& loc = std::source_location::current()) : str(str), loc(loc)
+	{
+	}
+
+	[[nodiscard]] std::string GetLocation() const
+	{
+		return std::format("[{} ({}:{})]\n", loc.function_name(), loc.file_name(), loc.line());
+	}
+};
+
+struct FormatWstring
+{
+	std::wstring_view str;
+	std::source_location loc{};
+
+	FormatWstring(const wchar_t* str, const std::source_location& loc = std::source_location::current()) : str(str), loc(loc)
+	{
+	}
+
+	FormatWstring(const std::wstring&& str, const std::source_location& loc = std::source_location::current()) : str(str), loc(loc)
+	{
+	}
+
+	[[nodiscard]] std::wstring GetLocation() const
+	{
+		auto basic_string = std::format("[{} ({}:{})]\n", loc.function_name(), loc.file_name(), loc.line());
+		return std::wstring(basic_string.begin(), basic_string.end());
+	}
+};
+
+
+template <typename... Args>
+void LOG(std::string_view format_str, Args&&... args)
+{
+	_globalCvarManager->log(std::vformat(format_str, std::make_format_args(args...)));
+}
+
+template <typename... Args>
+void LOG(std::wstring_view format_str, Args&&... args)
+{
+	_globalCvarManager->log(std::vformat(format_str, std::make_wformat_args(args...)));
+}
+
+
+template <typename... Args>
+void DEBUGLOG(const FormatString& format_str, Args&&... args)
+{
+	if constexpr (DEBUG_LOG)
+	{
+		auto text = std::vformat(format_str.str, std::make_format_args(args...));
+		auto location = format_str.GetLocation();
+		_globalCvarManager->log(std::format("{} {}", text, location));
+	}
+}
+
+template <typename... Args>
+void DEBUGLOG(const FormatWstring& format_str, Args&&... args)
+{
+	if constexpr (DEBUG_LOG)
+	{
+		auto text = std::vformat(format_str.str, std::make_wformat_args(args...));
+		auto location = format_str.GetLocation();
+		_globalCvarManager->log(std::format(L"{} {}", text, location));
+	}
+}
+'''
+
+    @staticmethod
+    def _gen_guibase_h(name: str) -> str:
+        return f'''#pragma once
+#include "bakkesmod/plugin/PluginSettingsWindow.h"
+#include "bakkesmod/plugin/pluginwindow.h"
+
+class SettingsWindowBase : public BakkesMod::Plugin::PluginSettingsWindow
+{{
+public:
+\tstd::string GetPluginName() override;
+\tvoid SetImGuiContext(uintptr_t ctx) override;
+}};
+
+class PluginWindowBase : public BakkesMod::Plugin::PluginWindow
+{{
+public:
+\tvirtual ~PluginWindowBase() = default;
+
+\tbool isWindowOpen_ = false;
+\tstd::string menuTitle_ = "{name}";
+
+\tstd::string GetMenuName() override;
+\tstd::string GetMenuTitle() override;
+\tvoid SetImGuiContext(uintptr_t ctx) override;
+\tbool ShouldBlockInput() override;
+\tbool IsActiveOverlay() override;
+\tvoid OnOpen() override;
+\tvoid OnClose() override;
+\tvoid Render() override;
+
+\tvirtual void RenderWindow() = 0;
+}};
+'''
+
+    @staticmethod
+    def _gen_guibase_cpp(name: str) -> str:
+        return f'''#include "pch.h"
+#include "GuiBase.h"
+
+std::string SettingsWindowBase::GetPluginName()
+{{
+\treturn "{name}";
+}}
+
+void SettingsWindowBase::SetImGuiContext(uintptr_t ctx)
+{{
+\tImGui::SetCurrentContext(reinterpret_cast<ImGuiContext*>(ctx));
+}}
+
+std::string PluginWindowBase::GetMenuName()
+{{
+\treturn "{name}";
+}}
+
+std::string PluginWindowBase::GetMenuTitle()
+{{
+\treturn menuTitle_;
+}}
+
+void PluginWindowBase::SetImGuiContext(uintptr_t ctx)
+{{
+\tImGui::SetCurrentContext(reinterpret_cast<ImGuiContext*>(ctx));
+}}
+
+bool PluginWindowBase::ShouldBlockInput()
+{{
+\treturn ImGui::GetIO().WantCaptureMouse || ImGui::GetIO().WantCaptureKeyboard;
+}}
+
+bool PluginWindowBase::IsActiveOverlay()
+{{
+\treturn true;
+}}
+
+void PluginWindowBase::OnOpen()
+{{
+\tisWindowOpen_ = true;
+}}
+
+void PluginWindowBase::OnClose()
+{{
+\tisWindowOpen_ = false;
+}}
+
+void PluginWindowBase::Render()
+{{
+\tif (!ImGui::Begin(menuTitle_.c_str(), &isWindowOpen_, ImGuiWindowFlags_None))
+\t{{
+\t\tImGui::End();
+\t\treturn;
+\t}}
+
+\tRenderWindow();
+
+\tImGui::End();
+
+\tif (!isWindowOpen_)
+\t{{
+\t\t_globalCvarManager->executeCommand("togglemenu " + GetMenuName());
+\t}}
+}}
+'''
+
+    @staticmethod
+    def _gen_resource_h() -> str:
+        return '''//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++ generated include file.
+
+// Next default values for new objects
+//
+#ifdef APSTUDIO_INVOKED
+#ifndef APSTUDIO_READONLY_SYMBOLS
+#define _APS_NEXT_RESOURCE_VALUE        101
+#define _APS_NEXT_COMMAND_VALUE         40001
+#define _APS_NEXT_CONTROL_VALUE         1001
+#define _APS_NEXT_SYMED_VALUE           101
+#endif
+#endif
+'''
+
+    @staticmethod
+    def _gen_plugin_rc(name: str) -> str:
+        return f'''// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+#include "version.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include "winres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_BUILD
+PRODUCTVERSION VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_BUILD
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x0L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "{name} BakkesMod Plugin"
+            VALUE "FileVersion", stringify(VERSION_MAJOR) "." stringify(VERSION_MINOR) "." stringify(VERSION_PATCH) "." stringify(VERSION_BUILD)
+            VALUE "InternalName", "{name}.dll"
+            VALUE "OriginalFilename", "{name}.dll"
+            VALUE "ProductName", "{name}"
+            VALUE "ProductVersion", stringify(VERSION_MAJOR) "." stringify(VERSION_MINOR) "." stringify(VERSION_PATCH) "." stringify(VERSION_BUILD)
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+'''
+
+    @staticmethod
+    def _gen_bakkesmod_props() -> str:
+        return '''<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="ShowBakkesInfo" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <BakkesModPath>$(registry:HKEY_CURRENT_USER\\Software\\BakkesMod\\AppPath@BakkesModPath)</BakkesModPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(BakkesModPath)\\bakkesmodsdk\\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(BakkesModPath)\\bakkesmodsdk\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>pluginsdk.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command> "$(BakkesModPath)\\bakkesmodsdk\\bakkesmod-patch.exe" "$(TargetPath)"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup />
+  <Target Name="ShowBakkesInfo" BeforeTargets="PrepareForBuild">
+    <Message Text="Using bakkes found at $(BakkesModPath)" Importance="normal" />
+  </Target>
+</Project>
+'''
+
+    @staticmethod
+    def _gen_vcxproj(name: str) -> str:
+        return f'''<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <RootNamespace>{name}</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="BakkesMod.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)plugins\\</OutDir>
+    <IntDir>$(SolutionDir)build\\.intermediates\\$(Configuration)\\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="{name}.cpp" />
+    <ClCompile Include="GuiBase.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="logging.h" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="GuiBase.h" />
+    <ClInclude Include="{name}.h" />
+    <ClInclude Include="version.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="{name}.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.targets" />
+</Project>
+'''
 
 
 # ---------------------------------------------------------------------------
@@ -489,9 +1207,235 @@ Return ONLY the C++ function code.
             logger.error("ImGui generation failed: %s", e)
             return ""
 
+    def generate_full_plugin_with_rag(self, description: str) -> Dict:
+        """Generate a complete BakkesMod plugin project using RAG context.
+
+        End-to-end flow:
+        1. Use RAG to retrieve relevant SDK docs.
+        2. Detect which features are needed from the description.
+        3. Generate plugin.h and plugin.cpp with LLM + RAG context.
+        4. Wrap in full project scaffold (all 12 files).
+        5. Validate with ``CodeValidator.validate_project()``.
+        6. Return complete project.
+
+        Args:
+            description: Natural language description of the desired plugin.
+
+        Returns:
+            Dict with ``project_files`` (Dict[str, str]), ``header``,
+            ``implementation``, ``features_used`` (List[str]),
+            ``validation`` (Dict), and ``explanation`` (str).
+        """
+        # 1. Retrieve RAG context
+        sdk_context = ""
+        if self.query_engine:
+            try:
+                rag_query = f"BakkesMod SDK: How to implement: {description}"
+                rag_response = self.query_engine.query(rag_query)
+                sdk_context = str(rag_response)
+            except Exception as e:
+                logger.warning("RAG context retrieval failed: %s", e)
+
+        # 2. Detect features from description
+        features = self._detect_features(description)
+
+        # 3. Derive a C++ class name from description
+        plugin_name = self._derive_plugin_name(description)
+
+        # 4. Generate plugin.h and plugin.cpp with LLM
+        llm_code = self._generate_with_llm(
+            plugin_name, description, features, sdk_context
+        )
+
+        # 5. Generate full project scaffold
+        project_files = self.template_engine.generate_complete_project(
+            plugin_name=plugin_name,
+            description=description,
+            features=features,
+        )
+
+        # Override plugin.h and plugin.cpp with LLM-generated versions
+        # (if LLM produced valid output)
+        header_key = f"{plugin_name}.h"
+        impl_key = f"{plugin_name}.cpp"
+        if llm_code.get("header"):
+            project_files[header_key] = llm_code["header"]
+        if llm_code.get("implementation"):
+            project_files[impl_key] = llm_code["implementation"]
+
+        # 6. Validate
+        validation = self.validator.validate_project(project_files)
+
+        return {
+            "project_files": project_files,
+            "header": project_files.get(header_key, ""),
+            "implementation": project_files.get(impl_key, ""),
+            "features_used": features,
+            "validation": validation,
+            "explanation": description,
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    _FEATURE_KEYWORDS = {
+        "settings_window": [
+            "settings", "configuration", "config tab", "settings window",
+            "preferences", "options menu",
+        ],
+        "plugin_window": [
+            "window", "overlay", "ui window", "plugin window", "gui",
+            "hud", "display",
+        ],
+        "cvars": [
+            "cvar", "console variable", "configuration variable",
+            "toggle", "enable", "disable", "setting",
+        ],
+        "event_hooks": [
+            "hook", "event", "goal", "score", "ball", "boost", "demo",
+            "demolition", "match", "tick", "countdown",
+        ],
+        "drawable": [
+            "draw", "canvas", "render on screen", "draw on screen",
+            "overlay", "hud", "visual",
+        ],
+        "imgui": [
+            "imgui", "ui", "gui", "interface", "button", "checkbox",
+            "slider", "menu", "window",
+        ],
+    }
+
+    def _detect_features(self, description: str) -> List[str]:
+        """Detect which BakkesMod features are needed from a description.
+
+        Scans the description for keywords associated with each feature
+        flag and returns the list of detected features.
+
+        Args:
+            description: Plugin requirements in natural language.
+
+        Returns:
+            List of feature flag strings.
+        """
+        desc_lower = description.lower()
+        detected = []
+        for feature, keywords in self._FEATURE_KEYWORDS.items():
+            if any(kw in desc_lower for kw in keywords):
+                detected.append(feature)
+        return detected
+
+    @staticmethod
+    def _derive_plugin_name(description: str) -> str:
+        """Derive a C++ class name from a natural language description.
+
+        Takes the first few significant words, strips non-alphanumeric
+        characters, and converts to PascalCase.
+
+        Args:
+            description: Plugin description text.
+
+        Returns:
+            A valid C++ identifier (e.g. ``"GoalTracker"``).
+        """
+        # Strip common filler words
+        stopwords = {
+            "a", "an", "the", "that", "which", "for", "and", "or", "to",
+            "in", "on", "with", "my", "create", "make", "build", "write",
+            "plugin", "bakkesmod",
+        }
+        words = re.findall(r"[a-zA-Z]+", description)
+        significant = [w for w in words if w.lower() not in stopwords][:4]
+
+        if not significant:
+            return "MyPlugin"
+
+        name = "".join(w.capitalize() for w in significant)
+
+        # Ensure starts with a letter
+        if not name[0].isalpha():
+            name = "Plugin" + name
+
+        return name
+
+    def _generate_with_llm(
+        self,
+        plugin_name: str,
+        description: str,
+        features: List[str],
+        sdk_context: str,
+    ) -> Dict[str, str]:
+        """Use LLM to generate plugin.h and plugin.cpp with SDK context.
+
+        Args:
+            plugin_name: C++ class name.
+            description: User's requirements.
+            features: Detected feature flags.
+            sdk_context: RAG-retrieved SDK documentation.
+
+        Returns:
+            Dict with ``header`` and ``implementation`` (empty on failure).
+        """
+        features_desc = ", ".join(features) if features else "basic plugin"
+
+        prompt = f"""You are a BakkesMod plugin code generator.
+
+USER REQUIREMENTS:
+{description}
+
+FEATURES TO IMPLEMENT: {features_desc}
+
+RELEVANT SDK DOCUMENTATION:
+{sdk_context or "No SDK context available."}
+
+Generate a complete BakkesMod plugin with these EXACT patterns:
+
+CRITICAL REQUIREMENTS:
+- Class name: {plugin_name}
+- First include in .cpp MUST be: #include "pch.h"
+- Second include: #include "{plugin_name}.h"
+- BAKKESMOD_PLUGIN({plugin_name}, "{description[:60]}", plugin_version, PLUGINTYPE_FREEPLAY)
+- Declare: std::shared_ptr<CVarManagerWrapper> _globalCvarManager;
+- In onLoad(): _globalCvarManager = cvarManager;
+- Include "version.h" in .h and use: constexpr auto plugin_version = stringify(VERSION_MAJOR) "." ...
+- Header must have #pragma once
+- Class inherits from BakkesMod::Plugin::BakkesModPlugin
+- Include "GuiBase.h" in the header
+- Use LOG() for logging (NOT cvarManager->log)
+- Use HookEvent / HookEventWithCallerPost for event hooks
+- Use cvarManager->registerCvar for CVars
+- Use gameWrapper->RegisterDrawable for canvas drawing
+
+Return ONLY the code in this exact format:
+
+HEADER FILE:
+```cpp
+[complete header code]
+```
+
+IMPLEMENTATION FILE:
+```cpp
+[complete implementation code]
+```
+"""
+
+        try:
+            response = self.llm.complete(prompt)
+            code = self._parse_code_response(response.text)
+
+            # Validate the generated code
+            if code.get("implementation"):
+                validation = self.validator.validate_syntax(code["implementation"])
+                if not validation["valid"]:
+                    logger.warning(
+                        "LLM-generated code has syntax issues: %s",
+                        validation["errors"],
+                    )
+            return code
+
+        except Exception as e:
+            logger.error("LLM code generation failed: %s", e)
+            return {"header": "", "implementation": ""}
 
     def _parse_code_response(self, response_text: str) -> Dict[str, str]:
         """Extract header and implementation code blocks from LLM output.
@@ -517,68 +1461,3 @@ Return ONLY the C++ function code.
             "header": header_match.group(1).strip() if header_match else "",
             "implementation": impl_match.group(1).strip() if impl_match else "",
         }
-
-    @staticmethod
-    def _generate_cmake_file() -> str:
-        """Generate a minimal CMakeLists.txt for the plugin project.
-
-        Returns:
-            CMake configuration string.
-        """
-        return """cmake_minimum_required(VERSION 3.15)
-project(MyPlugin)
-
-set(CMAKE_CXX_STANDARD 17)
-
-# BakkesMod SDK
-find_package(BakkesModSDK REQUIRED)
-
-# Plugin source files
-add_library(MyPlugin SHARED
-    MyPlugin.h
-    MyPlugin.cpp
-)
-
-target_link_libraries(MyPlugin
-    BakkesModSDK::BakkesModSDK
-)
-
-# Install
-install(TARGETS MyPlugin
-    DESTINATION plugins
-)
-"""
-
-    @staticmethod
-    def _generate_readme(requirements: str) -> str:
-        """Generate a basic README for the plugin project.
-
-        Args:
-            requirements: The original requirements used for generation.
-
-        Returns:
-            Markdown README string.
-        """
-        return f"""# MyPlugin
-
-## Description
-
-{requirements}
-
-## Installation
-
-1. Copy `MyPlugin.dll` to `bakkesmod/plugins/`
-2. Enable in BakkesMod plugin manager
-
-## Building
-
-```bash
-mkdir build && cd build
-cmake ..
-cmake --build .
-```
-
-## Usage
-
-[Plugin usage instructions here]
-"""

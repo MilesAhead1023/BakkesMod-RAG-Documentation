@@ -240,3 +240,74 @@ class MetricsCollector:
         if not self.enabled:
             return
         self.daily_cost.set(cost)
+
+
+# ---------------------------------------------------------------------------
+# Singleton accessors (convenience shortcuts for DI-primary pattern)
+# ---------------------------------------------------------------------------
+
+_logger_instance: Optional[StructuredLogger] = None
+_phoenix_instance: Optional[PhoenixObserver] = None
+_metrics_instance: Optional[MetricsCollector] = None
+
+
+def get_logger(config=None) -> StructuredLogger:
+    """Return the global ``StructuredLogger`` singleton.
+
+    Creates one on first call. Passing *config* on the first call
+    configures the logger; subsequent calls ignore *config* and return
+    the cached instance.
+
+    Args:
+        config: Optional ``ObservabilityConfig``.
+
+    Returns:
+        The shared ``StructuredLogger`` instance.
+    """
+    global _logger_instance
+    if _logger_instance is None:
+        _logger_instance = StructuredLogger("bakkesmod_rag", config)
+    return _logger_instance
+
+
+def get_phoenix(config=None) -> PhoenixObserver:
+    """Return the global ``PhoenixObserver`` singleton.
+
+    Args:
+        config: Optional ``ObservabilityConfig``.
+
+    Returns:
+        The shared ``PhoenixObserver`` instance.
+    """
+    global _phoenix_instance
+    if _phoenix_instance is None:
+        _phoenix_instance = PhoenixObserver(config)
+    return _phoenix_instance
+
+
+def get_metrics(config=None) -> MetricsCollector:
+    """Return the global ``MetricsCollector`` singleton.
+
+    Args:
+        config: Optional ``ObservabilityConfig``.
+
+    Returns:
+        The shared ``MetricsCollector`` instance.
+    """
+    global _metrics_instance
+    if _metrics_instance is None:
+        _metrics_instance = MetricsCollector(config)
+    return _metrics_instance
+
+
+def initialize_observability(config=None):
+    """One-shot initialisation of all observability subsystems.
+
+    Args:
+        config: ``ObservabilityConfig`` (or the full ``RAGConfig``'s
+            ``.observability`` attribute).
+
+    Returns:
+        Tuple of ``(StructuredLogger, PhoenixObserver, MetricsCollector)``.
+    """
+    return get_logger(config), get_phoenix(config), get_metrics(config)
