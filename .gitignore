@@ -32,7 +32,7 @@ wheels/
 
 # PyInstaller
 *.manifest
-*.spec
+# Note: bakkesmod_rag_gui.spec is tracked for executable builds
 
 # Unit test / coverage
 .pytest_cache/

@@ -6,12 +6,49 @@ This guide covers deploying the BakkesMod RAG GUI application for various enviro
 
 ## Table of Contents
 
-1. [Local Development](#local-development)
-2. [Docker Deployment](#docker-deployment)
-3. [Production Deployment](#production-deployment)
-4. [Cloud Deployment](#cloud-deployment)
-5. [Security Considerations](#security-considerations)
-6. [Monitoring & Maintenance](#monitoring--maintenance)
+1. [Windows Executable (Easiest)](#windows-executable)
+2. [Local Development](#local-development)
+3. [Docker Deployment](#docker-deployment)
+4. [Production Deployment](#production-deployment)
+5. [Cloud Deployment](#cloud-deployment)
+6. [Security Considerations](#security-considerations)
+7. [Monitoring & Maintenance](#monitoring--maintenance)
+
+---
+
+## Windows Executable
+
+**Easiest option for Windows users - No Python installation required!**
+
+### For End Users
+
+1. **Download the pre-built executable:**
+   - Get `BakkesMod_RAG_GUI.zip` from [GitHub Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases)
+   - Extract to your desired location
+
+2. **Configure API keys:**
+   ```cmd
+   copy .env.example .env
+   notepad .env
+   ```
+   Add your OpenAI, Anthropic, and Google API keys
+
+3. **Run:**
+   ```cmd
+   BakkesMod_RAG_GUI.exe
+   ```
+
+See [EXE_USER_GUIDE.md](EXE_USER_GUIDE.md) for detailed instructions.
+
+### For Developers (Building from Source)
+
+Build your own executable:
+
+```cmd
+build_exe.bat
+```
+
+See [BUILD_EXE_GUIDE.md](BUILD_EXE_GUIDE.md) for detailed build instructions.
 
 ---
 
@@ -27,12 +64,20 @@ This guide covers deploying the BakkesMod RAG GUI application for various enviro
 **Steps:**
 
 1. **Clone and setup:**
-   ```bash
+   ```cmd
    git clone https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation.git
    cd BakkesMod-RAG-Documentation
    ```
 
 2. **Configure environment:**
+   
+   **Windows:**
+   ```cmd
+   copy .env.example .env
+   REM Edit .env and add your API keys
+   ```
+   
+   **Linux/Mac:**
    ```bash
    cp .env.example .env
    # Edit .env and add your API keys
@@ -40,15 +85,15 @@ This guide covers deploying the BakkesMod RAG GUI application for various enviro
 
 3. **Launch GUI:**
    
+   **Windows:**
+   ```cmd
+   start_gui.bat
+   ```
+   
    **Linux/Mac:**
    ```bash
    chmod +x start_gui.sh
    ./start_gui.sh
-   ```
-   
-   **Windows:**
-   ```cmd
-   start_gui.bat
    ```
 
 The GUI will be available at `http://localhost:7860`
@@ -57,10 +102,25 @@ The GUI will be available at `http://localhost:7860`
 
 If you prefer manual setup:
 
+**Windows:**
+```cmd
+REM Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+REM Install dependencies
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+REM Launch
+python rag_gui.py
+```
+
+**Linux/Mac:**
 ```bash
 # Create virtual environment
 python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Install dependencies
 pip install --upgrade pip

@@ -1,6 +1,6 @@
 # BakkesMod RAG - Quick Start Guide
 
-Your RAG system is fully operational! Here's how to use it.
+Your RAG system is fully operational! Here's how to use it on **Windows 11** (primary platform).
 
 ---
 

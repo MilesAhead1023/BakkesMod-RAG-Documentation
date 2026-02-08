@@ -4,6 +4,8 @@
 
 This directory contains a Python-based RAG (Retrieval-Augmented Generation) system for querying BakkesMod SDK documentation. It uses hybrid retrieval combining vector search, knowledge graphs, and BM25 keyword matching.
 
+> **Platform Note:** Optimized for **Windows 11** (primary platform for BakkesMod development). Cross-platform support available for Linux/Mac.
+
 ## Architecture
 
 ```
@@ -19,32 +21,54 @@ evaluator.py            - RAG quality evaluation
 
 ### 1. Install Python Dependencies
 
+**Windows:**
+```cmd
+pip install -r requirements.txt
+```
+
+**Linux/Mac:**
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Set Environment Variables
 
+**Windows PowerShell:**
+```powershell
+# Required API keys (all three are required for full functionality)
+$env:OPENAI_API_KEY="sk-..."
+$env:ANTHROPIC_API_KEY="sk-ant-..."
+$env:GOOGLE_API_KEY="..."
+
+# Optional: custom storage location
+$env:RAG_STORAGE_DIR="./custom_storage"
+```
+
+**Linux/Mac:**
 ```bash
-# Required for all builds
+# Required API keys (all three are required for full functionality)
 export OPENAI_API_KEY="sk-..."
-
-# Optional: for Anthropic reranking
 export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Optional: for Gemini knowledge graphs
 export GOOGLE_API_KEY="..."
 
 # Optional: custom storage location
 export RAG_STORAGE_DIR="./custom_storage"
 ```
 
+**Note:** All three API keys (OpenAI, Anthropic, and Google) are required by `rag_sentinel.py` and integration tests. Individual scripts may work with a subset, but for complete functionality, configure all three keys.
+
 ### 3. Prepare Documentation
 
 Ensure markdown files exist in `./docs/`:
 
+**Windows:**
+```cmd
+dir docs\*.md /s
+```
+
+**Linux/Mac:**
 ```bash
-ls -R docs/*.md
+find docs -name "*.md"
 ```
 
 ## Usage
@@ -124,6 +148,14 @@ find docs -name "*.md" | head
 
 Set environment variables:
 
+**Windows PowerShell:**
+```powershell
+$env:OPENAI_API_KEY="your-key"
+$env:ANTHROPIC_API_KEY="your-key"
+$env:GOOGLE_API_KEY="your-key"
+```
+
+**Linux/Mac:**
 ```bash
 export OPENAI_API_KEY="your-key"
 export ANTHROPIC_API_KEY="your-key"
@@ -143,6 +175,13 @@ tail -100 gemini_build.log
 
 Delete and rebuild:
 
+**Windows:**
+```cmd
+rmdir /s /q rag_storage
+python comprehensive_rag.py
+```
+
+**Linux/Mac:**
 ```bash
 rm -rf rag_storage/
 python comprehensive_rag.py

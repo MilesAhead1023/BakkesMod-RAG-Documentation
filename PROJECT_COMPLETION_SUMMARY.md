@@ -82,15 +82,15 @@ From the problem statement:
 
 ### Startup Scripts
 
-**`start_gui.sh`** (Linux/Mac)
+**`start_gui.bat`** (Windows - Primary)
 - Automatic virtual environment setup
 - Dependency installation
 - Environment validation
 - Helpful error messages
 
-**`start_gui.bat`** (Windows)
-- Windows-compatible launcher
-- Same features as Unix script
+**`start_gui.sh`** (Linux/Mac)
+- Cross-platform support
+- Same features as Windows script
 - User-friendly output
 
 ### Documentation
@@ -363,15 +363,26 @@ GOOGLE_API_KEY=...  # Optional
 ### 1. Local Development
 
 **Quick Start:**
-```bash
-# Linux/Mac
-./start_gui.sh
 
-# Windows
+*Windows:*
+```cmd
 start_gui.bat
 ```
 
-**Manual:**
+*Linux/Mac:*
+```bash
+./start_gui.sh
+```
+
+**Manual (Windows):**
+```cmd
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python rag_gui.py
+```
+
+**Manual (Linux/Mac):**
 ```bash
 python -m venv venv
 source venv/bin/activate
