@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 from dotenv import load_dotenv
 from cache_manager import SemanticCache
+from query_rewriter import QueryRewriter  # Phase 2: Query expansion
 
 # Initialize colorama for Windows terminal colors
 try:
@@ -173,9 +174,14 @@ def build_rag_system():
     cache_stats = cache.stats()
     log(f"  Cache: {cache_stats['valid_entries']} valid entries, threshold={cache.similarity_threshold:.0%}")
 
+    # Phase 2: Initialize query rewriter with synonym expansion
+    log("Initializing query rewriter...")
+    query_rewriter = QueryRewriter(llm=Settings.llm, use_llm=False)  # Use synonym expansion (no extra API calls)
+    log("  Query rewriter: Synonym expansion enabled")
+
     reranker_status = " + Neural reranking" if node_postprocessors else ""
     log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, 3-way fusion + multi-query{reranker_status}: Vector+BM25+KG × 4 variants)")
-    return query_engine, cache, len(documents), len(nodes)
+    return query_engine, cache, query_rewriter, len(documents), len(nodes)
 
 def highlight_code_blocks(text: str) -> str:
     """Apply syntax highlighting to C++ code blocks.
@@ -357,7 +363,7 @@ def main():
 
     # Build system
     try:
-        query_engine, cache, num_docs, num_nodes = build_rag_system()
+        query_engine, cache, query_rewriter, num_docs, num_nodes = build_rag_system()
     except Exception as e:
         log(f"Failed to build system: {e}", "ERROR")
         import traceback
@@ -411,9 +417,15 @@ def main():
 
             # Process query
             log(f"Processing: {query[:60]}{'...' if len(query) > 60 else ''}")
+
+            # Phase 2: Rewrite query with domain synonyms
+            expanded_query = query_rewriter.expand_with_synonyms(query)
+            if expanded_query != query:
+                log(f"Expanded: {expanded_query[:60]}{'...' if len(expanded_query) > 60 else ''}")
+
             start_time = time.time()
 
-            # Check cache first
+            # Check cache first (use original query for cache key)
             cache_result = cache.get(query)
 
             if cache_result:
@@ -441,7 +453,8 @@ def main():
 
             # If not in cache, do normal query
             try:
-                response = query_engine.query(query)
+                # Use expanded query for retrieval (better coverage)
+                response = query_engine.query(expanded_query)
                 query_time = time.time() - start_time
 
                 query_count += 1
