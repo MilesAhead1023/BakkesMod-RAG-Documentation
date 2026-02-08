@@ -181,11 +181,12 @@ class BakkesModRAGGUI:
             kg_retriever = kg_index.as_retriever(similarity_top_k=3)
             
             # Create fusion retriever
+            # Note: use_async=False for compatibility with streaming responses
             fusion_retriever = QueryFusionRetriever(
                 [vector_retriever, bm25_retriever, kg_retriever],
                 num_queries=4,
                 mode="reciprocal_rerank",
-                use_async=True
+                use_async=False
             )
             
             # Create query engine
