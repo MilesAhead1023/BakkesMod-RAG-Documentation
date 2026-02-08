@@ -7,7 +7,6 @@ Generates BakkesMod plugin code using RAG + LLM.
 import os
 from typing import Dict, Optional
 from llama_index.core import Settings, VectorStoreIndex, load_index_from_storage, StorageContext
-from llama_index.llms.anthropic import Anthropic
 from llama_index.embeddings.openai import OpenAIEmbedding
 from code_templates import PluginTemplateEngine
 from code_validator import CodeValidator
@@ -23,8 +22,8 @@ class CodeGenerator:
         Args:
             rag_storage_dir: Path to RAG index storage
         """
-        # Initialize LLM for code generation
-        Settings.llm = Anthropic(model="claude-sonnet-4-5", temperature=0, max_retries=3)
+        # Initialize LLM with fallback chain
+        self._initialize_llm()
         Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
 
         # Load RAG index
@@ -34,6 +33,43 @@ class CodeGenerator:
         # Initialize helpers
         self.template_engine = PluginTemplateEngine()
         self.validator = CodeValidator()
+
+    def _initialize_llm(self):
+        """Initialize LLM with automatic fallback chain."""
+        llm_configured = False
+
+        # Try Anthropic first (best for code generation)
+        if os.getenv("ANTHROPIC_API_KEY"):
+            try:
+                from llama_index.llms.anthropic import Anthropic
+                Settings.llm = Anthropic(model="claude-sonnet-4-5", temperature=0, max_retries=3)
+                print("[INFO] Using Anthropic Claude Sonnet 4.5 for code generation")
+                llm_configured = True
+            except Exception as e:
+                print(f"[WARNING] Anthropic failed: {e}")
+
+        # Fallback to Google Gemini (free tier, good at code)
+        if not llm_configured and os.getenv("GOOGLE_API_KEY"):
+            try:
+                from llama_index.llms.google_genai import GoogleGenAI
+                Settings.llm = GoogleGenAI(model="gemini-2.0-flash-exp", temperature=0)
+                print("[WARNING] Using Google Gemini 2.0 Flash (FREE TIER fallback)")
+                llm_configured = True
+            except Exception as e:
+                print(f"[WARNING] Google Gemini failed: {e}")
+
+        # Fallback to OpenAI GPT-4o-mini (cheap)
+        if not llm_configured and os.getenv("OPENAI_API_KEY"):
+            try:
+                from llama_index.llms.openai import OpenAI
+                Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
+                print("[WARNING] Using OpenAI GPT-4o-mini (cheap fallback)")
+                llm_configured = True
+            except Exception as e:
+                print(f"[WARNING] OpenAI failed: {e}")
+
+        if not llm_configured:
+            raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
 
     def _load_index(self, storage_dir: str) -> Optional[VectorStoreIndex]:
         """Load RAG index from storage."""

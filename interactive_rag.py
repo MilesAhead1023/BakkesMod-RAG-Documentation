@@ -63,9 +63,45 @@ def build_rag_system():
         cohere_available = False
         log("Cohere reranker not available (install llama-index-postprocessor-cohere-rerank)", "WARNING")
 
-    # Configure
+    # Configure embeddings
     Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", max_retries=3)
-    Settings.llm = Anthropic(model="claude-sonnet-4-5", max_retries=3, temperature=0)
+
+    # Configure LLM with automatic fallback chain
+    # Priority: Anthropic (best quality) -> Google Gemini (free tier) -> OpenAI GPT-4o-mini (cheap)
+    llm_configured = False
+
+    # Try Anthropic first (best quality but paid)
+    if os.getenv("ANTHROPIC_API_KEY"):
+        try:
+            from llama_index.llms.anthropic import Anthropic
+            Settings.llm = Anthropic(model="claude-sonnet-4-5", max_retries=3, temperature=0)
+            log("Using Anthropic Claude Sonnet 4.5 (primary)")
+            llm_configured = True
+        except Exception as e:
+            log(f"Anthropic failed: {e}", "WARNING")
+
+    # Fallback to Google Gemini (generous free tier)
+    if not llm_configured and os.getenv("GOOGLE_API_KEY"):
+        try:
+            from llama_index.llms.google_genai import GoogleGenAI
+            Settings.llm = GoogleGenAI(model="gemini-2.0-flash-exp", temperature=0)
+            log("Using Google Gemini 2.0 Flash (fallback 1 - FREE TIER)", "WARNING")
+            llm_configured = True
+        except Exception as e:
+            log(f"Google Gemini failed: {e}", "WARNING")
+
+    # Fallback to OpenAI GPT-4o-mini (very cheap)
+    if not llm_configured and os.getenv("OPENAI_API_KEY"):
+        try:
+            from llama_index.llms.openai import OpenAI
+            Settings.llm = OpenAI(model="gpt-4o-mini", temperature=0)
+            log("Using OpenAI GPT-4o-mini (fallback 2 - cheap)", "WARNING")
+            llm_configured = True
+        except Exception as e:
+            log(f"OpenAI failed: {e}", "WARNING")
+
+    if not llm_configured:
+        raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
 
     # Load documents - BakkesMod SDK only
     reader = SimpleDirectoryReader(

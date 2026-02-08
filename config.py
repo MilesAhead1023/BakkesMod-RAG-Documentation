@@ -40,6 +40,14 @@ class LLMConfig(BaseModel):
     primary_provider: Literal["openai", "anthropic", "gemini"] = "anthropic"
     primary_model: str = "claude-3-5-sonnet-20240620"
 
+    # Fallback chain (tried in order if primary fails)
+    fallback_providers: list[Literal["openai", "anthropic", "gemini"]] = ["gemini", "openai"]
+    fallback_models: dict[str, str] = {
+        "gemini": "gemini-2.0-flash-exp",  # Free tier
+        "openai": "gpt-4o-mini",  # Very cheap
+        "anthropic": "claude-sonnet-4-5"
+    }
+
     # LLM for knowledge graph extraction (should be fast and cheap)
     kg_provider: Literal["openai", "anthropic", "gemini"] = "openai"
     kg_model: str = "gpt-4o-mini"
@@ -47,7 +55,7 @@ class LLMConfig(BaseModel):
     # Reranker LLM
     rerank_provider: Literal["openai", "anthropic"] = "openai"
     rerank_model: str = "gpt-4o-mini"
-    
+
     temperature: float = 0.0
     max_retries: int = 5
     timeout: int = 60  # seconds

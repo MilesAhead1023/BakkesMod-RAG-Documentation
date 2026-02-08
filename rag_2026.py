@@ -73,30 +73,83 @@ class GoldStandardRAG:
             )
         else:
             raise ValueError(f"Unsupported embedding provider: {self.config.embedding.provider}")
-        
-        # Primary LLM (for query engine)
-        if self.config.llm.primary_provider == "anthropic":
-            Settings.llm = Anthropic(
-                model=self.config.llm.primary_model,
-                max_retries=self.config.llm.max_retries,
-                temperature=self.config.llm.temperature,
-                timeout=self.config.llm.timeout
-            )
-        elif self.config.llm.primary_provider == "openai":
-            Settings.llm = OpenAI(
-                model=self.config.llm.primary_model,
-                max_retries=self.config.llm.max_retries,
-                temperature=self.config.llm.temperature,
-                timeout=self.config.llm.timeout
-            )
-        elif self.config.llm.primary_provider == "gemini":
-            Settings.llm = GoogleGenerativeAI(
-                model=self.config.llm.primary_model,
-                max_retries=self.config.llm.max_retries,
-                temperature=self.config.llm.temperature
-            )
-        else:
-            raise ValueError(f"Unsupported primary LLM provider: {self.config.llm.primary_provider}")
+
+        # Primary LLM with automatic fallback chain
+        llm_configured = False
+
+        # Try primary provider first
+        if self.config.llm.primary_provider == "anthropic" and self.config.anthropic_api_key:
+            try:
+                Settings.llm = Anthropic(
+                    model=self.config.llm.primary_model,
+                    max_retries=self.config.llm.max_retries,
+                    temperature=self.config.llm.temperature,
+                    timeout=self.config.llm.timeout
+                )
+                self.logger.logger.info(f"Using primary: Anthropic {self.config.llm.primary_model}")
+                llm_configured = True
+            except Exception as e:
+                self.logger.logger.warning(f"Anthropic failed: {e}")
+
+        elif self.config.llm.primary_provider == "openai" and self.config.openai_api_key:
+            try:
+                Settings.llm = OpenAI(
+                    model=self.config.llm.primary_model,
+                    max_retries=self.config.llm.max_retries,
+                    temperature=self.config.llm.temperature,
+                    timeout=self.config.llm.timeout
+                )
+                self.logger.logger.info(f"Using primary: OpenAI {self.config.llm.primary_model}")
+                llm_configured = True
+            except Exception as e:
+                self.logger.logger.warning(f"OpenAI failed: {e}")
+
+        elif self.config.llm.primary_provider == "gemini" and self.config.google_api_key:
+            try:
+                Settings.llm = GoogleGenerativeAI(
+                    model=self.config.llm.primary_model,
+                    max_retries=self.config.llm.max_retries,
+                    temperature=self.config.llm.temperature
+                )
+                self.logger.logger.info(f"Using primary: Gemini {self.config.llm.primary_model}")
+                llm_configured = True
+            except Exception as e:
+                self.logger.logger.warning(f"Gemini failed: {e}")
+
+        # Try fallback providers
+        if not llm_configured:
+            for provider in self.config.llm.fallback_providers:
+                model = self.config.llm.fallback_models.get(provider)
+
+                if provider == "gemini" and self.config.google_api_key:
+                    try:
+                        Settings.llm = GoogleGenerativeAI(model=model, temperature=0)
+                        self.logger.logger.warning(f"Using fallback: Gemini {model} (FREE TIER)")
+                        llm_configured = True
+                        break
+                    except Exception as e:
+                        self.logger.logger.warning(f"Gemini fallback failed: {e}")
+
+                elif provider == "openai" and self.config.openai_api_key:
+                    try:
+                        Settings.llm = OpenAI(model=model, temperature=0)
+                        self.logger.logger.warning(f"Using fallback: OpenAI {model}")
+                        llm_configured = True
+                        break
+                    except Exception as e:
+                        self.logger.logger.warning(f"OpenAI fallback failed: {e}")
+
+                elif provider == "anthropic" and self.config.anthropic_api_key:
+                    try:
+                        Settings.llm = Anthropic(model=model, temperature=0)
+                        self.logger.logger.warning(f"Using fallback: Anthropic {model}")
+                        llm_configured = True
+                        break
+                    except Exception as e:
+                        self.logger.logger.warning(f"Anthropic fallback failed: {e}")
+
+        if not llm_configured:
+            raise RuntimeError("No LLM provider available! Check API keys and providers.")
         
         self.logger.logger.info("Settings configured", extra={
             "event": "settings_configured",

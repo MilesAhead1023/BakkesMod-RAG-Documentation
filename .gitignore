@@ -44,8 +44,9 @@ htmlcov/
 .hypothesis/
 junit/
 
-# RAG Storage
+# RAG Storage (all variants - these are large generated files)
 rag_storage/
+rag_storage_*/
 gemini_rag_storage/
 storage/
 *.faiss
