@@ -206,7 +206,7 @@ class RAGEngine:
         start_time = time.time()
         self.logger.log_query(question)
 
-        expanded_query = self.rewriter.expand_with_synonyms(question)
+        expanded_query = self.rewriter.rewrite(question)
 
         # -- Cache check ------------------------------------------------
         if use_cache and self.config.cache.enabled:
@@ -314,7 +314,7 @@ class RAGEngine:
         start_time = time.time()
         self.logger.log_query(question, {"mode": "streaming"})
 
-        expanded_query = self.rewriter.expand_with_synonyms(question)
+        expanded_query = self.rewriter.rewrite(question)
 
         # -- Cache check ------------------------------------------------
         if use_cache and self.config.cache.enabled:
