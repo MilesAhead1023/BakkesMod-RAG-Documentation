@@ -149,6 +149,119 @@ IMPLEMENTATION FILE:
 
         return code
 
+    def generate_complete_project(self, requirements: str) -> Dict[str, str]:
+        """
+        Generate a complete plugin project with all files.
+
+        Args:
+            requirements: Detailed plugin requirements
+
+        Returns:
+            Dict with 'header', 'implementation', 'cmake', 'readme' keys
+        """
+        # Generate main plugin code
+        plugin_code = self.generate_plugin_with_rag(requirements)
+
+        # Generate CMakeLists.txt
+        cmake_content = self._generate_cmake_file()
+
+        # Generate README
+        readme_content = self._generate_readme(requirements)
+
+        return {
+            **plugin_code,
+            "cmake": cmake_content,
+            "readme": readme_content
+        }
+
+    def generate_imgui_window(self, requirements: str) -> str:
+        """
+        Generate ImGui window code.
+
+        Args:
+            requirements: UI requirements
+
+        Returns:
+            C++ code for ImGui window
+        """
+        # Query RAG for ImGui documentation
+        if self.query_engine:
+            rag_query = f"ImGui window implementation: {requirements}"
+            rag_response = self.query_engine.query(rag_query)
+            imgui_context = str(rag_response)
+        else:
+            imgui_context = "Basic ImGui window structure"
+
+        prompt = f"""Generate ImGui window code for these requirements:
+
+{requirements}
+
+SDK CONTEXT:
+{imgui_context}
+
+Generate complete C++ function that:
+- Uses ImGui::Begin() and ImGui::End()
+- Implements the requested UI elements
+- Follows BakkesMod ImGui patterns
+
+Return ONLY the C++ function code.
+"""
+
+        response = Settings.llm.complete(prompt)
+        return response.text.strip()
+
+    def _generate_cmake_file(self) -> str:
+        """Generate CMakeLists.txt for the plugin."""
+        return """cmake_minimum_required(VERSION 3.15)
+project(MyPlugin)
+
+set(CMAKE_CXX_STANDARD 17)
+
+# BakkesMod SDK
+find_package(BakkesModSDK REQUIRED)
+
+# Plugin source files
+add_library(MyPlugin SHARED
+    MyPlugin.h
+    MyPlugin.cpp
+)
+
+target_link_libraries(MyPlugin
+    BakkesModSDK::BakkesModSDK
+)
+
+# Install
+install(TARGETS MyPlugin
+    DESTINATION plugins
+)
+"""
+
+    def _generate_readme(self, requirements: str) -> str:
+        """Generate README.md for the plugin."""
+        return f"""# MyPlugin
+
+## Description
+
+{requirements}
+
+## Installation
+
+1. Copy `MyPlugin.dll` to `bakkesmod/plugins/`
+2. Enable in BakkesMod plugin manager
+
+## Building
+
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build .
+```
+
+## Usage
+
+[Plugin usage instructions here]
+"""
+
     def _parse_code_response(self, response_text: str) -> Dict[str, str]:
         """Parse LLM response to extract header and implementation code."""
         import re

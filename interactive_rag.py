@@ -350,6 +350,7 @@ def display_help():
     print("  help   - Show this help message")
     print("  stats  - Show session statistics")
     print("  /generate <requirements> - Generate plugin code using RAG + LLM")
+    print("  /export - Export last generated code to files (coming soon)")
     print("  quit   - Exit the program (or Ctrl+C)")
     print("=" * 80)
 
@@ -439,6 +440,15 @@ def main():
                 except Exception as e:
                     log(f"Code generation failed: {e}", "ERROR")
 
+                continue
+
+            if query.lower().startswith('/export'):
+                print("\n[EXPORT PROJECT]")
+                print("This will save the last generated code to files.")
+                print("Directory: ./generated_plugin/")
+
+                # TODO: Implement file export
+                print("[INFO] Feature coming soon!")
                 continue
 
             if query.lower() == 'stats':
