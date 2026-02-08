@@ -12,6 +12,7 @@ llama-index-postprocessor-cohere-rerank>=0.1.0  # Phase 2: Neural reranking
 llama-index-postprocessor-flag-embedding-reranker>=0.1.0  # Free local reranker (BAAI/BGE)
 llama-index-postprocessor-flashrank-rerank>=0.1.0  # Lightweight free reranker
 FlagEmbedding>=1.3.0  # BAAI BGE reranker backend
+tree-sitter-language-pack>=0.6.0  # AST-based code chunking (C++, 160+ languages)
 
 # LLM Provider SDKs
 google-genai>=1.33.0

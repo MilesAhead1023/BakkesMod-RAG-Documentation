@@ -84,6 +84,11 @@ class ChunkingConfig(BaseModel):
     chunk_overlap: int = 128
     include_metadata: bool = True
     include_prev_next_rel: bool = True
+    enable_semantic_chunking: bool = True
+    semantic_breakpoint_percentile: int = 95
+    # CodeSplitter (tree-sitter AST) settings for .h/.cpp files
+    code_chunk_lines: int = 40
+    code_chunk_lines_overlap: int = 15
 
 
 class CacheConfig(BaseModel):

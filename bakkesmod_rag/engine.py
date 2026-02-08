@@ -149,7 +149,7 @@ class RAGEngine:
 
         # Documents & indexes -------------------------------------------
         self.documents = load_documents(self.config)
-        self.nodes = parse_nodes(self.documents, self.config)
+        self.nodes = parse_nodes(self.documents, self.config, embed_model=self.embed_model)
         self.indexes = build_or_load_indexes(
             self.nodes, self.documents, self.config
         )
