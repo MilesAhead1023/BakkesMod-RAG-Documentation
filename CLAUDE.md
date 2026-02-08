@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Summary
 
-RAG system for BakkesMod SDK documentation using LlamaIndex. Provides an interactive query interface and code generation mode for BakkesMod Rocket League plugin development.
+RAG system for BakkesMod SDK documentation using LlamaIndex. Provides an interactive query interface and code generation mode for BakkesMod Rocket League plugin development. All functionality is in the unified `bakkesmod_rag/` Python package.
 
 ## Commands
 
 ```bash
-# Run the interactive RAG system (primary entry point)
+# Run the interactive RAG system (CLI)
 python interactive_rag.py
 
-# Run the config-driven "Gold Standard" RAG variant
-python rag_2026.py
+# Run the GUI (Gradio web interface)
+python rag_gui.py
 
 # Run all tests
 pytest -v
@@ -24,8 +24,17 @@ pytest test_smoke.py -v
 # Build KG index separately using OpenAI (faster than free tier)
 python build_kg_openai.py
 
+# Run comprehensive builder with incremental KG checkpointing
+python -m bakkesmod_rag.comprehensive_builder
+
 # Validate environment and API keys
-python rag_sentinel.py
+python -m bakkesmod_rag.sentinel
+
+# Run RAG quality evaluation
+python -m bakkesmod_rag.evaluator
+
+# Start MCP server for Claude Code integration
+python -m bakkesmod_rag.mcp_server
 
 # Install dependencies
 pip install -r requirements.txt
@@ -36,22 +45,43 @@ docker-compose up -d
 
 ## Architecture
 
-### Two RAG Entry Points
+### Unified Package: `bakkesmod_rag/`
 
-- **`interactive_rag.py`** — The actively-used, battle-tested entry point. Inline LLM fallback chain with live verification, semantic cache, query rewriting, streaming responses, syntax highlighting, confidence scoring, and `/generate` code generation mode. Loads from `docs_bakkesmod_only/` and `templates/` directories.
-- **`rag_2026.py`** + **`config.py`** — Config-driven "Gold Standard" variant using Pydantic `RAGConfig` singleton. Has observability (Phoenix tracing, Prometheus metrics), cost tracking, and circuit breakers. Loads from `docs/` directory only. Uses different index IDs (`"kg"` vs `"knowledge_graph"`).
+All RAG logic lives in the `bakkesmod_rag/` package. The two entry points (`interactive_rag.py` and `rag_gui.py`) are thin wrappers that handle I/O while delegating to `RAGEngine`.
 
-These two systems are **not integrated**. They have separate document loading, different storage paths, and different LLM configuration approaches. `interactive_rag.py` is the one actively maintained and used.
+```
+bakkesmod_rag/
+  __init__.py            # Public API: RAGEngine, QueryResult, CodeResult, RAGConfig
+  config.py              # Pydantic config with all settings
+  llm_provider.py        # Single LLM fallback chain + live verification
+  document_loader.py     # Load all 215 docs (.md, .h, .cpp) from both dirs
+  retrieval.py           # 3-way fusion: Vector + BM25 + KG
+  cache.py               # Semantic cache (embedding-based, 92% threshold, 7-day TTL)
+  query_rewriter.py      # Domain synonym expansion (60+ mappings, zero API cost)
+  confidence.py          # Confidence scoring logic
+  code_generator.py      # Plugin code gen (templates + validator + LLM)
+  observability.py       # Structured logging + optional Phoenix/Prometheus
+  cost_tracker.py        # Token counting + budget enforcement
+  resilience.py          # Circuit breaker + retry + rate limiter
+  engine.py              # RAGEngine: central orchestrator wiring everything
+  sentinel.py            # System diagnostics and health checks
+  evaluator.py           # RAG quality evaluation with optional RAGAS
+  mcp_server.py          # MCP server for Claude Code IDE integration
+  comprehensive_builder.py  # Full index builder with incremental KG checkpoints
 
-### LLM Fallback Chain (interactive_rag.py)
+interactive_rag.py       # CLI entry point — thin wrapper (~260 lines)
+rag_gui.py               # GUI entry point — thin wrapper (~500 lines)
+```
 
-Priority order, each verified with a live `"Say OK"` test call at startup:
-1. Anthropic Claude Sonnet 4.5 (premium)
+### LLM Fallback Chain
+
+Defined once in `bakkesmod_rag/llm_provider.py`. Priority order, each verified with a live `"Say OK"` test call at startup:
+1. Anthropic Claude Sonnet (premium)
 2. OpenRouter / DeepSeek V3 (FREE)
 3. Google Gemini 2.5 Flash (FREE)
 4. OpenAI GPT-4o-mini (cheap)
 
-This same pattern is duplicated in `code_generator.py`. If one provider's credits are exhausted, the system automatically falls through to the next.
+If one provider's credits are exhausted, the system automatically falls through to the next.
 
 ### 3-Way Fusion Retrieval
 
@@ -60,7 +90,7 @@ This same pattern is duplicated in `code_generator.py`. If one provider's credit
 - **BM25** keyword search
 - **Knowledge Graph** (relationship triplets extracted by LLM)
 
-Results are fused via reciprocal rank fusion, then optionally reranked by Cohere neural reranker.
+Results are fused via reciprocal rank fusion with 4 query variants, then optionally reranked by Cohere neural reranker.
 
 ### Document Sources
 
@@ -70,32 +100,38 @@ Results are fused via reciprocal rank fusion, then optionally reranked by Cohere
 
 ### Index Storage
 
-- `rag_storage/` — Persisted indexes used by `interactive_rag.py` (gitignored, ~250MB)
+- `rag_storage/` — Single canonical persisted index location (gitignored, ~250MB)
   - Vector index ID: `"vector"`
   - KG index ID: `"knowledge_graph"`
   - Delete this directory to force full rebuild
-- `rag_storage_bakkesmod/` — Older index used by `code_generator.py`
 
-### Supporting Modules
+### Package Modules
 
 | Module | Purpose |
 |---|---|
-| `cache_manager.py` | `SemanticCache` — embedding-based response caching (92% similarity threshold, 7-day TTL) |
-| `query_rewriter.py` | `QueryRewriter` — BakkesMod domain synonym expansion (60+ mappings, zero API cost) |
-| `code_generator.py` | `CodeGenerator` — RAG-enhanced plugin code generation (`.h` + `.cpp`) |
-| `code_templates.py` | `PluginTemplateEngine` — structural templates for plugin scaffolding |
-| `code_validator.py` | `CodeValidator` — C++ syntax and BakkesMod API pattern validation |
-| `build_kg_openai.py` | Standalone KG builder using GPT-4o-mini (~13 min vs ~80 min on free tier) |
-| `cost_tracker.py` | Token-level cost tracking with budget alerts |
-| `observability.py` | Phoenix tracing + Prometheus metrics + structured logging |
-| `resilience.py` | Circuit breakers, retry strategies, fallback chains |
-| `mcp_rag_server.py` | MCP server for Claude Code IDE integration |
+| `bakkesmod_rag/config.py` | Pydantic `RAGConfig` with all settings (LLM, embedding, retriever, cache, cost, etc.) |
+| `bakkesmod_rag/llm_provider.py` | Single LLM fallback chain with live verification + embedding model |
+| `bakkesmod_rag/document_loader.py` | Load and parse all docs from configured directories |
+| `bakkesmod_rag/retrieval.py` | Index building, caching, and fusion retriever creation |
+| `bakkesmod_rag/cache.py` | `SemanticCache` — embedding-based response caching |
+| `bakkesmod_rag/query_rewriter.py` | `QueryRewriter` — BakkesMod domain synonym expansion |
+| `bakkesmod_rag/confidence.py` | Confidence scoring based on retrieval quality metrics |
+| `bakkesmod_rag/code_generator.py` | `BakkesModCodeGenerator` + `PluginTemplateEngine` + `CodeValidator` |
+| `bakkesmod_rag/engine.py` | `RAGEngine` — central orchestrator wiring all subsystems |
+| `bakkesmod_rag/cost_tracker.py` | Token-level cost tracking with budget alerts |
+| `bakkesmod_rag/observability.py` | Structured logging + optional Phoenix/Prometheus |
+| `bakkesmod_rag/resilience.py` | Circuit breakers, retry strategies, fallback chains |
+| `bakkesmod_rag/sentinel.py` | System diagnostics and health checks |
+| `bakkesmod_rag/evaluator.py` | RAG quality evaluation with golden test queries |
+| `bakkesmod_rag/mcp_server.py` | MCP server for Claude Code IDE integration |
+| `bakkesmod_rag/comprehensive_builder.py` | Full index build with incremental KG checkpointing |
+| `build_kg_openai.py` | Standalone KG builder using GPT-4o-mini |
 
 ## Key Patterns
 
 ### Live LLM Verification
 
-Every LLM provider is tested with a real API call (`llm.complete("Say OK")`) before being accepted. This catches expired credits, invalid keys, and rate limits that wouldn't surface from just initializing the client. Pattern used in both `interactive_rag.py` and `code_generator.py`.
+Every LLM provider is tested with a real API call (`llm.complete("Say OK")`) before being accepted. This catches expired credits, invalid keys, and rate limits. Defined once in `bakkesmod_rag/llm_provider.py`.
 
 ### Document Text Sanitization
 

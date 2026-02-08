@@ -51,9 +51,7 @@ hiddenimports += collect_submodules('openai')
 hiddenimports += collect_submodules('google')
 hiddenimports += ['google.genai']
 
-# Cache and utilities
-hiddenimports += collect_submodules('gptcache')
-hiddenimports += ['faiss']
+# Utilities
 hiddenimports += collect_submodules('pygments')
 hiddenimports += collect_submodules('colorama')
 
@@ -62,21 +60,23 @@ hiddenimports += ['tiktoken_ext.openai_public', 'tiktoken_ext']
 hiddenimports += ['pydantic', 'pydantic.dataclasses']
 hiddenimports += ['dotenv']
 hiddenimports += ['nest_asyncio']
-hiddenimports += ['watchdog', 'watchdog.observers', 'watchdog.events']
 
-# Application modules
+# Unified bakkesmod_rag package
+hiddenimports += collect_submodules('bakkesmod_rag')
 hiddenimports += [
-    'cache_manager',
-    'code_generator', 
-    'code_templates',
-    'code_validator',
-    'comprehensive_rag',
-    'config',
-    'cost_tracker',
-    'evaluator',
-    'query_rewriter',
-    'resilience',
-    'observability'
+    'bakkesmod_rag',
+    'bakkesmod_rag.config',
+    'bakkesmod_rag.llm_provider',
+    'bakkesmod_rag.document_loader',
+    'bakkesmod_rag.retrieval',
+    'bakkesmod_rag.cache',
+    'bakkesmod_rag.query_rewriter',
+    'bakkesmod_rag.confidence',
+    'bakkesmod_rag.code_generator',
+    'bakkesmod_rag.engine',
+    'bakkesmod_rag.cost_tracker',
+    'bakkesmod_rag.observability',
+    'bakkesmod_rag.resilience',
 ]
 
 a = Analysis(

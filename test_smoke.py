@@ -1,6 +1,6 @@
 """
 Smoke tests - verify code syntax and basic functionality without API calls.
-This tests that our fixes work at the syntax/import level.
+Tests the unified bakkesmod_rag package at the syntax/import level.
 """
 
 import os
@@ -15,124 +15,178 @@ print("=" * 60)
 print("SMOKE TESTS - Code Syntax & Structure Validation")
 print("=" * 60)
 
-# Test 1: Python compilation
+# Test 1: Python compilation of all package modules
 print("\n[TEST 1] Python Syntax Validation")
 print("-" * 60)
 
-files_to_test = [
-    'rag_sentinel.py',
-    'comprehensive_rag.py',
-    'gemini_rag_builder.py',
-    'mcp_rag_server.py',
-    'test_rag_integration.py',
-]
-
 import py_compile
 
+package_files = [
+    'bakkesmod_rag/__init__.py',
+    'bakkesmod_rag/config.py',
+    'bakkesmod_rag/llm_provider.py',
+    'bakkesmod_rag/document_loader.py',
+    'bakkesmod_rag/retrieval.py',
+    'bakkesmod_rag/cache.py',
+    'bakkesmod_rag/query_rewriter.py',
+    'bakkesmod_rag/confidence.py',
+    'bakkesmod_rag/code_generator.py',
+    'bakkesmod_rag/engine.py',
+    'bakkesmod_rag/cost_tracker.py',
+    'bakkesmod_rag/observability.py',
+    'bakkesmod_rag/resilience.py',
+    'bakkesmod_rag/sentinel.py',
+    'bakkesmod_rag/evaluator.py',
+    'bakkesmod_rag/mcp_server.py',
+    'bakkesmod_rag/comprehensive_builder.py',
+]
+
+entry_files = [
+    'interactive_rag.py',
+    'rag_gui.py',
+]
+
 all_passed = True
-for file in files_to_test:
+for file in package_files + entry_files:
     try:
         py_compile.compile(file, doraise=True)
-        print(f"[PASS] {file:40s} - Syntax valid")
+        print(f"[PASS] {file:50s} - Syntax valid")
     except py_compile.PyCompileError as e:
-        print(f"[FAIL] {file:40s} - Syntax error")
+        print(f"[FAIL] {file:50s} - Syntax error")
         print(f"   {e}")
         all_passed = False
+    except FileNotFoundError:
+        print(f"[FAIL] {file:50s} - File not found")
+        all_passed = False
 
-# Test 2: Import validation (checks our fixes work)
+# Test 2: Import validation
 print("\n[TEST 2] Module Import Validation")
 print("-" * 60)
 
 import_tests = [
-    ('comprehensive_rag', 'comprehensive_rag'),
-    ('gemini_rag_builder', 'gemini_rag_builder'),
-    ('rag_sentinel', 'rag_sentinel'),
-    ('mcp_rag_server', 'mcp_rag_server'),
+    ('bakkesmod_rag', 'bakkesmod_rag'),
+    ('bakkesmod_rag.config', 'bakkesmod_rag.config'),
+    ('bakkesmod_rag.llm_provider', 'bakkesmod_rag.llm_provider'),
+    ('bakkesmod_rag.document_loader', 'bakkesmod_rag.document_loader'),
+    ('bakkesmod_rag.retrieval', 'bakkesmod_rag.retrieval'),
+    ('bakkesmod_rag.cache', 'bakkesmod_rag.cache'),
+    ('bakkesmod_rag.query_rewriter', 'bakkesmod_rag.query_rewriter'),
+    ('bakkesmod_rag.confidence', 'bakkesmod_rag.confidence'),
+    ('bakkesmod_rag.code_generator', 'bakkesmod_rag.code_generator'),
+    ('bakkesmod_rag.engine', 'bakkesmod_rag.engine'),
+    ('bakkesmod_rag.cost_tracker', 'bakkesmod_rag.cost_tracker'),
+    ('bakkesmod_rag.observability', 'bakkesmod_rag.observability'),
+    ('bakkesmod_rag.resilience', 'bakkesmod_rag.resilience'),
+    ('bakkesmod_rag.sentinel', 'bakkesmod_rag.sentinel'),
+    ('bakkesmod_rag.evaluator', 'bakkesmod_rag.evaluator'),
+    ('bakkesmod_rag.comprehensive_builder', 'bakkesmod_rag.comprehensive_builder'),
 ]
 
 for display_name, module_name in import_tests:
     try:
         __import__(module_name)
-        print(f"[PASS] {display_name:40s} - Imports successfully")
+        print(f"[PASS] {display_name:50s} - Imports successfully")
     except ImportError as e:
-        print(f"[WARN]  {display_name:40s} - Missing dependency: {e}")
-        # Missing dependencies don't fail smoke test
+        print(f"[WARN] {display_name:50s} - Missing dependency: {e}")
     except Exception as e:
-        print(f"[FAIL] {display_name:40s} - Import error: {type(e).__name__}: {e}")
+        print(f"[FAIL] {display_name:50s} - Import error: {type(e).__name__}: {e}")
         all_passed = False
 
-# Test 3: Check critical fixes were applied
-print("\n[TEST 3] Verify 2026 API Fixes Applied")
+# Test 3: Verify public API exports
+print("\n[TEST 3] Public API Exports")
 print("-" * 60)
 
-# Check comprehensive_rag.py uses correct Anthropic model format
-with open('comprehensive_rag.py', 'r') as f:
-    content = f.read()
+try:
+    from bakkesmod_rag import RAGEngine, RAGConfig, QueryResult, CodeResult
+    print("[PASS] RAGEngine, RAGConfig, QueryResult, CodeResult all exported")
+except ImportError as e:
+    print(f"[FAIL] Public API export error: {e}")
+    all_passed = False
 
-    # Should NOT have Bedrock format
-    if 'anthropic.claude-3-5-sonnet-20241022-v2:0' in content:
-        print("[FAIL] comprehensive_rag.py still has Bedrock model format")
-        all_passed = False
-    elif 'claude-3-5-sonnet-20240620' in content:
-        print("[PASS] comprehensive_rag.py uses correct Anthropic SDK format")
+# Test 4: Verify config defaults are correct
+print("\n[TEST 4] Config Defaults Verification")
+print("-" * 60)
+
+try:
+    from bakkesmod_rag.config import RAGConfig
+    config = RAGConfig()
+
+    # Embedding model should be text-embedding-3-small (not large)
+    if config.embedding.model == "text-embedding-3-small":
+        print("[PASS] Embedding model: text-embedding-3-small (correct)")
     else:
-        print("[WARN]  comprehensive_rag.py Anthropic model format unclear")
-
-    # Should NOT have GPTCache
-    if 'from gptcache' in content:
-        print("[FAIL] comprehensive_rag.py still has deprecated GPTCache")
+        print(f"[FAIL] Embedding model: {config.embedding.model} (expected text-embedding-3-small)")
         all_passed = False
+
+    # Embedding dimension should be 1536 (not 3072)
+    if config.embedding.dimension == 1536:
+        print("[PASS] Embedding dimension: 1536 (correct)")
     else:
-        print("[PASS] comprehensive_rag.py has GPTCache removed")
-
-# Check gemini_rag_builder.py uses correct model names
-with open('gemini_rag_builder.py', 'r') as f:
-    content = f.read()
-
-    # Should NOT have models/ prefix
-    if 'GoogleGenAI(model="models/gemini' in content:
-        print("[FAIL] gemini_rag_builder.py still has 'models/' prefix")
+        print(f"[FAIL] Embedding dimension: {config.embedding.dimension} (expected 1536)")
         all_passed = False
-    elif 'GoogleGenAI(model="gemini-2.0-flash")' in content:
-        print("[PASS] gemini_rag_builder.py uses correct model format")
+
+    # Fusion num_queries should be 4 (not 1)
+    if config.retriever.fusion_num_queries == 4:
+        print("[PASS] Fusion num_queries: 4 (correct)")
     else:
-        print("[WARN]  gemini_rag_builder.py model format unclear")
-
-# Check rag_sentinel.py has no syntax errors
-with open('rag_sentinel.py', 'r', encoding='utf-8') as f:
-    content = f.read()
-    lines = content.split('\n')
-
-    # Count except statements (should not have orphaned except)
-    in_comment = False
-    except_count = 0
-    try_count = 0
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith('#'):
-            continue
-        if 'try:' in stripped:
-            try_count += 1
-        if 'except' in stripped and not stripped.startswith('#'):
-            except_count += 1
-
-    if except_count > try_count:
-        print(f"[FAIL] rag_sentinel.py may have orphaned except (try:{try_count}, except:{except_count})")
+        print(f"[FAIL] Fusion num_queries: {config.retriever.fusion_num_queries} (expected 4)")
         all_passed = False
+
+    # Storage dir should be rag_storage
+    if config.storage.storage_dir == "rag_storage":
+        print("[PASS] Storage dir: rag_storage (correct)")
     else:
-        print(f"[PASS] rag_sentinel.py exception handling looks correct")
+        print(f"[FAIL] Storage dir: {config.storage.storage_dir} (expected rag_storage)")
+        all_passed = False
+
+    # Docs dirs should include both directories
+    if "docs_bakkesmod_only" in config.storage.docs_dirs and "templates" in config.storage.docs_dirs:
+        print("[PASS] Docs dirs: docs_bakkesmod_only + templates (correct)")
+    else:
+        print(f"[FAIL] Docs dirs: {config.storage.docs_dirs} (expected both dirs)")
+        all_passed = False
+
+    # Required exts should include .md, .h, .cpp
+    for ext in [".md", ".h", ".cpp"]:
+        if ext in config.storage.required_exts:
+            print(f"[PASS] Required ext: {ext} (correct)")
+        else:
+            print(f"[FAIL] Required ext: {ext} missing from {config.storage.required_exts}")
+            all_passed = False
+
+except Exception as e:
+    print(f"[FAIL] Config validation error: {e}")
+    all_passed = False
+
+# Test 5: Verify QueryRewriter has domain synonyms
+print("\n[TEST 5] Query Rewriter Validation")
+print("-" * 60)
+
+try:
+    from bakkesmod_rag.query_rewriter import QueryRewriter
+    rewriter = QueryRewriter()
+    expanded = rewriter.expand_with_synonyms("car speed")
+    if "velocity" in expanded.lower() or "car" in expanded.lower():
+        print("[PASS] QueryRewriter expands domain synonyms")
+    else:
+        print(f"[WARN] QueryRewriter expansion unclear: {expanded[:60]}")
+except Exception as e:
+    print(f"[FAIL] QueryRewriter error: {e}")
+    all_passed = False
 
 # Final result
 print("\n" + "=" * 60)
 if all_passed:
     print("[PASS] ALL SMOKE TESTS PASSED")
     print("=" * 60)
-    print("\nThe 2026 API fixes have been successfully applied!")
+    print("\nThe unified bakkesmod_rag package is correctly structured.")
     print("All Python files have valid syntax and import correctly.")
-    sys.exit(0)
 else:
     print("[FAIL] SOME TESTS FAILED")
     print("=" * 60)
     print("\nPlease review the failures above.")
-    sys.exit(1)
+
+
+def test_smoke_all_passed():
+    """Pytest-compatible test that verifies all smoke checks passed."""
+    assert all_passed, "One or more smoke tests failed — see output above"

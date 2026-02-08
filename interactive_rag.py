@@ -1,8 +1,8 @@
-"""
-Interactive RAG Query Interface
-================================
-Ask questions about BakkesMod SDK in an interactive loop.
-Provides detailed logging and formatted responses.
+"""Interactive RAG Query Interface -- CLI entry point.
+
+Thin wrapper around ``bakkesmod_rag.RAGEngine``.  Handles user I/O,
+syntax highlighting, and session statistics while delegating all RAG
+logic to the unified engine.
 """
 
 import os
@@ -11,421 +11,52 @@ import time
 import re
 from datetime import datetime
 from dotenv import load_dotenv
-from cache_manager import SemanticCache
-from query_rewriter import QueryRewriter  # Phase 2: Query expansion
+
+load_dotenv()
 
 # Initialize colorama for Windows terminal colors
 try:
     import colorama
     colorama.init()
 except ImportError:
-    pass  # Colorama not required, just nice to have
+    pass
 
-# Load environment variables
-load_dotenv()
 
 def log(message, level="INFO"):
     """Print timestamped log message."""
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] [{level:5s}] {message}")
 
-def log_section(title):
-    """Print a section header."""
-    print("\n" + "=" * 80)
-    print(f"  {title}")
-    print("=" * 80)
 
-def build_rag_system():
-    """Build and return the RAG system."""
-    log("Building RAG system...")
+def highlight_code_blocks(text):
+    """Apply syntax highlighting to C++ code blocks in *text*.
 
-    from llama_index.core import (
-        SimpleDirectoryReader,
-        StorageContext,
-        VectorStoreIndex,
-        Settings,
-        load_index_from_storage,
-        Document
-    )
-    from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
-    from llama_index.llms.anthropic import Anthropic
-    from llama_index.embeddings.openai import OpenAIEmbedding
-    from llama_index.retrievers.bm25 import BM25Retriever
-    from llama_index.core.retrievers import QueryFusionRetriever
-    from llama_index.core.query_engine import RetrieverQueryEngine
-    from llama_index.core.indices.knowledge_graph import KnowledgeGraphIndex
-
-    # Phase 2: Neural reranking
-    try:
-        from llama_index.postprocessor.cohere_rerank import CohereRerank
-        cohere_available = True
-    except ImportError:
-        cohere_available = False
-        log("Cohere reranker not available (install llama-index-postprocessor-cohere-rerank)", "WARNING")
-
-    # Configure embeddings
-    Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", max_retries=3)
-
-    # Configure LLM with automatic fallback chain
-    # Priority: Anthropic (premium) -> OpenRouter (FREE) -> Gemini (FREE) -> OpenAI (cheap)
-    # Each provider is verified with a live test call to catch credit exhaustion
-
-    def _try_llm(llm, name):
-        """Verify an LLM works by making a tiny test call."""
-        try:
-            response = llm.complete("Say OK")
-            if response and response.text:
-                return True
-        except Exception as e:
-            log(f"{name} test call failed: {str(e)[:120]}", "WARNING")
-        return False
-
-    llm_configured = False
-    providers = []
-
-    # Build provider list in priority order (wrap instantiation in try/except)
-    if os.getenv("ANTHROPIC_API_KEY"):
-        try:
-            from llama_index.llms.anthropic import Anthropic
-            providers.append(("Anthropic Claude Sonnet 4.5 (primary)",
-                              Anthropic(model="claude-sonnet-4-5", max_retries=1, temperature=0)))
-        except Exception as e:
-            log(f"Could not initialize Anthropic: {e}", "WARNING")
-
-    if os.getenv("OPENROUTER_API_KEY"):
-        try:
-            from llama_index.llms.openrouter import OpenRouter
-            providers.append(("OpenRouter / DeepSeek V3 (FREE)",
-                              OpenRouter(
-                                  model="deepseek/deepseek-chat-v3-0324",
-                                  api_key=os.getenv("OPENROUTER_API_KEY"),
-                                  temperature=0
-                              )))
-        except Exception as e:
-            log(f"Could not initialize OpenRouter: {e}", "WARNING")
-
-    if os.getenv("GOOGLE_API_KEY"):
-        try:
-            from llama_index.llms.google_genai import GoogleGenAI
-            providers.append(("Google Gemini 2.5 Flash (FREE)",
-                              GoogleGenAI(model="gemini-2.5-flash", temperature=0)))
-        except Exception as e:
-            log(f"Could not initialize Gemini: {e}", "WARNING")
-
-    if os.getenv("OPENAI_API_KEY"):
-        try:
-            from llama_index.llms.openai import OpenAI as OpenAILLM2
-            providers.append(("OpenAI GPT-4o-mini (cheap)",
-                              OpenAILLM2(model="gpt-4o-mini", temperature=0)))
-        except Exception as e:
-            log(f"Could not initialize OpenAI: {e}", "WARNING")
-
-    # Try each provider with a live verification call
-    for name, llm in providers:
-        log(f"Trying {name}...")
-        if _try_llm(llm, name):
-            Settings.llm = llm
-            log(f"Using {name}")
-            llm_configured = True
-            break
-
-    if not llm_configured:
-        raise RuntimeError("No LLM provider available! Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY")
-
-    # Load documents - BakkesMod SDK docs + templates
-    input_dirs = ["docs_bakkesmod_only", "templates"]
-    all_documents = []
-    for input_dir in input_dirs:
-        if not os.path.isdir(input_dir):
-            log(f"Directory '{input_dir}' not found, skipping", "WARNING")
-            continue
-        reader = SimpleDirectoryReader(
-            input_dir=input_dir,
-            required_exts=[".md", ".h", ".cpp"],
-            recursive=True,
-            filename_as_id=True
-        )
-        docs = reader.load_data()
-        log(f"Loaded {len(docs)} files from {input_dir}")
-        all_documents.extend(docs)
-
-    # Clean
-    cleaned_docs = []
-    for doc in all_documents:
-        clean_text = "".join(filter(lambda x: x.isprintable() or x in "\n\r\t", doc.text))
-        cleaned_docs.append(Document(text=clean_text, metadata=doc.metadata))
-    documents = cleaned_docs
-    log(f"Total documents loaded: {len(documents)}")
-
-    # Parse - use appropriate parser based on file type
-    md_docs = [d for d in documents if d.metadata.get("file_path", "").endswith(".md")]
-    code_docs = [d for d in documents if d.metadata.get("file_path", "").endswith((".h", ".cpp"))]
-
-    nodes = []
-    if md_docs:
-        md_parser = MarkdownNodeParser()
-        nodes.extend(md_parser.get_nodes_from_documents(md_docs))
-        log(f"Parsed {len(md_docs)} markdown files")
-    if code_docs:
-        code_parser = SentenceSplitter(chunk_size=1024, chunk_overlap=128)
-        nodes.extend(code_parser.get_nodes_from_documents(code_docs))
-        log(f"Parsed {len(code_docs)} code files (.h/.cpp)")
-
-    # Build/load index
-    storage_dir = "rag_storage"
-    from pathlib import Path
-    storage_path = Path(storage_dir)
-
-    if storage_path.exists():
-        log("Loading indexes from cache...")
-        storage_context = StorageContext.from_defaults(persist_dir=storage_dir)
-        vector_index = load_index_from_storage(storage_context, index_id="vector")
-
-        # Load KG index if it exists
-        try:
-            kg_index = load_index_from_storage(storage_context, index_id="knowledge_graph")
-            log("Loaded cached KG index")
-        except Exception as e:
-            log(f"KG index not in cache ({e}), building new one (this will take several minutes)...")
-
-            # Try building with current LLM, catch if it fails due to credits
-            try:
-                kg_index = KnowledgeGraphIndex.from_documents(
-                    documents,
-                    max_triplets_per_chunk=2,
-                    show_progress=True
-                )
-                kg_index.set_index_id("knowledge_graph")
-                kg_index.storage_context.persist(persist_dir=storage_dir)
-                log("KG index built and cached")
-            except Exception as kg_error:
-                log(f"Failed to build KG index: {str(kg_error)[:100]}", "ERROR")
-                log("Disabling KG retrieval - using 2-way fusion (Vector + BM25) only", "WARNING")
-                kg_index = None
-    else:
-        log("Building new indexes (this will take several minutes)...")
-        vector_index = VectorStoreIndex(nodes, show_progress=True)
-        vector_index.set_index_id("vector")
-        storage_path.mkdir(parents=True, exist_ok=True)
-        vector_index.storage_context.persist(persist_dir=storage_dir)
-        log("Vector index built and cached")
-
-        # Build KG index
-        log("Building Knowledge Graph index...")
-        kg_index = KnowledgeGraphIndex.from_documents(
-            documents,
-            max_triplets_per_chunk=2,
-            show_progress=True
-        )
-        kg_index.set_index_id("knowledge_graph")
-        kg_index.storage_context.persist(persist_dir=storage_dir)
-        log("KG index built and cached")
-
-    # Create retrievers
-    vector_retriever = vector_index.as_retriever(similarity_top_k=5)
-    bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=5)
-
-    # Build retriever list (conditionally include KG)
-    retrievers = [vector_retriever, bm25_retriever]
-    if kg_index is not None:
-        kg_retriever = kg_index.as_retriever(similarity_top_k=3)
-        retrievers.append(kg_retriever)
-        fusion_mode = "3-way fusion (Vector+BM25+KG)"
-    else:
-        fusion_mode = "2-way fusion (Vector+BM25)"
-
-    # Create query engine with fusion + multi-query
-    fusion_retriever = QueryFusionRetriever(
-        retrievers,
-        num_queries=4,  # Phase 2: Generate 4 query variants for better coverage
-        mode="reciprocal_rerank",
-        use_async=True
-    )
-
-    # Phase 2: Add neural reranker if available
-    node_postprocessors = []
-    if cohere_available and os.getenv("COHERE_API_KEY"):
-        try:
-            reranker = CohereRerank(
-                api_key=os.getenv("COHERE_API_KEY"),
-                model="rerank-english-v3.0",
-                top_n=5  # Return top 5 after reranking
-            )
-            node_postprocessors.append(reranker)
-            log("Neural reranker enabled (Cohere)")
-        except Exception as e:
-            log(f"Failed to initialize Cohere reranker: {e}", "WARNING")
-
-    query_engine = RetrieverQueryEngine.from_args(
-        fusion_retriever,
-        streaming=True,
-        node_postprocessors=node_postprocessors if node_postprocessors else None
-    )
-
-    # Initialize semantic cache
-    log("Initializing semantic cache...")
-    cache = SemanticCache(
-        cache_dir=".cache/semantic",
-        similarity_threshold=0.92,  # 92% similar = cache hit
-        ttl_seconds=86400 * 7,  # 7 days
-        embed_model=Settings.embed_model
-    )
-    cache_stats = cache.stats()
-    log(f"  Cache: {cache_stats['valid_entries']} valid entries, threshold={cache.similarity_threshold:.0%}")
-
-    # Phase 2: Initialize query rewriter with synonym expansion
-    log("Initializing query rewriter...")
-    query_rewriter = QueryRewriter(llm=Settings.llm, use_llm=False)  # Use synonym expansion (no extra API calls)
-    log("  Query rewriter: Synonym expansion enabled")
-
-    reranker_status = " + Neural reranking" if node_postprocessors else ""
-    log(f"System ready! ({len(documents)} docs, {len(nodes)} nodes, {fusion_mode} + multi-query{reranker_status} × 4 variants)")
-    return query_engine, cache, query_rewriter, len(documents), len(nodes)
-
-def highlight_code_blocks(text: str) -> str:
-    """Apply syntax highlighting to C++ code blocks.
-
-    Args:
-        text: Response text with potential code blocks
-
-    Returns:
-        Text with syntax-highlighted code blocks
+    Uses Pygments if available; returns *text* unchanged otherwise.
     """
     try:
         from pygments import highlight
         from pygments.lexers import CppLexer, get_lexer_by_name
         from pygments.formatters import TerminalFormatter
 
-        # Pattern to match code blocks
         code_block_pattern = r'```(\w+)?\n(.*?)```'
 
-        def highlight_match(match):
-            language = match.group(1) or 'cpp'  # Default to C++
+        def _highlight_match(match):
+            language = match.group(1) or 'cpp'
             code = match.group(2)
-
             try:
-                # Try to get lexer for the specified language
-                if language.lower() in ['cpp', 'c++', 'c']:
+                if language.lower() in ('cpp', 'c++', 'c'):
                     lexer = CppLexer()
                 else:
                     lexer = get_lexer_by_name(language, stripall=True)
-
-                highlighted = highlight(code, lexer, TerminalFormatter())
-                return f'\n{highlighted}'
-            except:
-                # If highlighting fails, return original
+                return '\n' + highlight(code, lexer, TerminalFormatter())
+            except Exception:
                 return match.group(0)
 
-        # Apply highlighting to all code blocks
-        highlighted_text = re.sub(code_block_pattern, highlight_match, text, flags=re.DOTALL)
-        return highlighted_text
+        return re.sub(code_block_pattern, _highlight_match, text, flags=re.DOTALL)
 
     except ImportError:
-        # If pygments not available, return original
         return text
 
-def stream_response(response):
-    """Display streaming response token by token.
-
-    Args:
-        response: StreamingResponse from query engine
-
-    Returns:
-        str: Complete response text
-    """
-    print("\n" + "-" * 80)
-    print("[ANSWER]")
-    print("-" * 80)
-
-    tokens = []
-    for token in response.response_gen:
-        print(token, end="", flush=True)
-        tokens.append(token)
-
-    print()  # Newline after streaming
-    print("-" * 80)
-
-    full_text = "".join(tokens)
-
-    # Apply syntax highlighting if code blocks present
-    if "```" in full_text:
-        highlighted = highlight_code_blocks(full_text)
-        # Clear previous output and reprint with highlighting
-        print("\033[F" * (full_text.count('\n') + 3))  # Move cursor up
-        print("\n" + "-" * 80)
-        print("[ANSWER]")
-        print("-" * 80)
-        print(highlighted)
-        print("-" * 80)
-
-    return full_text
-
-def calculate_confidence(source_nodes: list) -> tuple:
-    """Calculate confidence score from retrieval quality.
-
-    Args:
-        source_nodes: List of retrieved source nodes with scores
-
-    Returns:
-        Tuple of (confidence_score, confidence_label, explanation)
-    """
-    if not source_nodes:
-        return 0.0, "NO DATA", "No sources retrieved"
-
-    # Get scores
-    scores = [node.score for node in source_nodes if hasattr(node, 'score') and node.score is not None]
-
-    if not scores:
-        return 0.5, "MEDIUM", "Sources retrieved but no similarity scores available"
-
-    # Calculate metrics
-    avg_score = sum(scores) / len(scores)
-    max_score = max(scores)
-    num_sources = len(source_nodes)
-
-    # Score variance (lower is better - more consistent retrieval)
-    if len(scores) > 1:
-        mean = sum(scores) / len(scores)
-        variance = sum((s - mean) ** 2 for s in scores) / len(scores)
-        std_dev = variance ** 0.5
-    else:
-        std_dev = 0.0
-
-    # Calculate confidence (0-100%)
-    # Factors:
-    # - Average score (0-1): 50% weight
-    # - Max score (0-1): 20% weight
-    # - Number of sources (bonus): 10% weight
-    # - Consistency (low variance): 20% weight
-
-    score_component = avg_score * 50
-    max_component = max_score * 20
-    source_bonus = min(num_sources / 5.0, 1.0) * 10  # Max at 5 sources
-    consistency_component = max(0, (1 - std_dev) * 20)  # Lower variance = higher confidence
-
-    confidence = (score_component + max_component + source_bonus + consistency_component) / 100.0
-
-    # Clamp to 0-1
-    confidence = max(0.0, min(1.0, confidence))
-
-    # Assign label
-    if confidence >= 0.85:
-        label = "VERY HIGH"
-        explanation = "Excellent source match with high consistency"
-    elif confidence >= 0.70:
-        label = "HIGH"
-        explanation = "Strong source match with good relevance"
-    elif confidence >= 0.50:
-        label = "MEDIUM"
-        explanation = "Moderate source match, answer should be helpful"
-    elif confidence >= 0.30:
-        label = "LOW"
-        explanation = "Weak source match, verify answer carefully"
-    else:
-        label = "VERY LOW"
-        explanation = "Poor source match, answer may be unreliable"
-
-    return confidence, label, explanation
 
 def display_help():
     """Display help information."""
@@ -449,91 +80,90 @@ def display_help():
     print("  help   - Show this help message")
     print("  stats  - Show session statistics")
     print("  /generate <requirements> - Generate plugin code using RAG + LLM")
-    print("  /export - Export last generated code to files (coming soon)")
+    print("  /code <requirements>     - Alias for /generate")
     print("  quit   - Exit the program (or Ctrl+C)")
     print("=" * 80)
 
+
+def print_session_summary(query_count, successful, total_time):
+    """Print a summary of session statistics before exiting."""
+    if query_count > 0:
+        print(f"\nSession summary:")
+        print(f"  Total queries: {query_count}")
+        print(f"  Successful: {successful}")
+        print(f"  Average time: {total_time / query_count:.2f}s")
+    print("\nThank you for using BakkesMod RAG!\n")
+
+
 def main():
     """Main interactive loop."""
-    log_section("BAKKESMOD RAG - INTERACTIVE MODE")
+    print("=" * 80)
+    print("  BAKKESMOD RAG - INTERACTIVE MODE")
+    print("=" * 80)
 
-    # Check API keys
-    if not os.getenv("OPENAI_API_KEY") or not os.getenv("ANTHROPIC_API_KEY"):
-        log("Missing API keys! Check your .env file.", "ERROR")
-        sys.exit(1)
+    from bakkesmod_rag import RAGEngine
 
-    # Build system
+    log("Building RAG system...")
     try:
-        query_engine, cache, query_rewriter, num_docs, num_nodes = build_rag_system()
+        engine = RAGEngine()
     except Exception as e:
         log(f"Failed to build system: {e}", "ERROR")
         import traceback
         traceback.print_exc()
         sys.exit(1)
 
-    # Show welcome
-    print("\nWelcome to the BakkesMod RAG System!")
-    print(f"Loaded {num_docs} documents with {num_nodes} searchable chunks.")
-    print("\nType your question and press Enter.")
-    print("Type 'help' for examples, 'stats' for statistics, or 'quit' to exit.\n")
+    print(f"\nWelcome! {engine.num_documents} docs, {engine.num_nodes} nodes.")
+    print("Type 'help' for examples, 'quit' to exit.\n")
 
     query_count = 0
     total_time = 0.0
     successful = 0
 
-    # Main loop
     while True:
         try:
-            # Get input
             query = input("[QUERY] > ").strip()
-
             if not query:
                 continue
 
-            # Handle commands
-            if query.lower() in ['quit', 'exit', 'q']:
+            # --- quit ---
+            if query.lower() in ('quit', 'exit', 'q'):
                 print("\nExiting...")
-                if query_count > 0:
-                    print(f"\nSession summary:")
-                    print(f"  Total queries: {query_count}")
-                    print(f"  Successful: {successful}")
-                    print(f"  Average time: {total_time/query_count:.2f}s")
-                print("\nThank you for using BakkesMod RAG!\n")
+                print_session_summary(query_count, successful, total_time)
                 break
 
+            # --- help ---
             if query.lower() == 'help':
                 display_help()
                 continue
 
-            if query.lower().startswith('/generate ') or query.lower().startswith('/code '):
-                # Extract requirements
+            # --- code generation ---
+            if query.lower().startswith(('/generate ', '/code ')):
                 requirements = query.split(' ', 1)[1] if ' ' in query else ""
-
                 if not requirements:
                     print("[ERROR] Usage: /generate <plugin requirements>")
                     continue
 
                 log(f"Generating code for: {requirements[:60]}...")
-
-                from code_generator import CodeGenerator
-                generator = CodeGenerator()
-
                 try:
-                    result = generator.generate_plugin_with_rag(requirements)
+                    result = engine.generate_code(requirements)
 
                     print("\n" + "=" * 80)
                     print("[GENERATED CODE]")
                     print("=" * 80)
 
                     print("\n--- HEADER FILE (.h) ---")
-                    print(result["header"])
+                    print(result.header)
 
                     print("\n--- IMPLEMENTATION FILE (.cpp) ---")
-                    print(result["implementation"])
+                    print(result.implementation)
 
                     print("\n" + "=" * 80)
-                    print("[SAVE CODE]")
-                    print("Copy the code above to your plugin files")
+                    if result.validation and not result.validation.get("valid", True):
+                        print("[VALIDATION WARNINGS]")
+                        for err in result.validation.get("errors", []):
+                            print(f"  - {err}")
+                    else:
+                        print("[VALIDATION] All checks passed")
                     print("=" * 80)
 
                 except Exception as e:
@@ -541,118 +171,90 @@ def main():
 
                 continue
 
-            if query.lower().startswith('/export'):
-                print("\n[EXPORT PROJECT]")
-                print("This will save the last generated code to files.")
-                print("Directory: ./generated_plugin/")
-
-                # TODO: Implement file export
-                print("[INFO] Feature coming soon!")
-                continue
-
+            # --- stats ---
             if query.lower() == 'stats':
                 print(f"\n[SESSION STATISTICS]")
                 print(f"  Total queries: {query_count}")
                 print(f"  Successful: {successful}")
                 if query_count > 0:
-                    print(f"  Success rate: {(successful/query_count*100):.1f}%")
-                    print(f"  Average time: {total_time/query_count:.2f}s")
+                    print(f"  Success rate: {(successful / query_count * 100):.1f}%")
+                    print(f"  Average time: {total_time / query_count:.2f}s")
                 else:
                     print(f"  No queries yet!")
                 continue
 
-            # Process query
+            # --- streaming query ---
             log(f"Processing: {query[:60]}{'...' if len(query) > 60 else ''}")
 
-            # Phase 2: Rewrite query with domain synonyms
-            expanded_query = query_rewriter.expand_with_synonyms(query)
-            if expanded_query != query:
-                log(f"Expanded: {expanded_query[:60]}{'...' if len(expanded_query) > 60 else ''}")
-
-            start_time = time.time()
-
-            # Check cache first (use original query for cache key)
-            cache_result = cache.get(query)
-
-            if cache_result:
-                response_text, similarity, metadata = cache_result
-                query_time = time.time() - start_time
-
-                query_count += 1
-                total_time += query_time
-                successful += 1
+            try:
+                gen, get_meta = engine.query_streaming(query)
 
                 print("\n" + "-" * 80)
-                print("[ANSWER] (from cache)")
-                print("-" * 80)
-                print(response_text)
+                print("[ANSWER]")
                 print("-" * 80)
 
-                print(f"\n[METADATA]")
-                print(f"  Cache hit! (similarity: {similarity:.1%})")
-                print(f"  Cached query: '{metadata['cached_query'][:60]}...'")
-                print(f"  Cache age: {metadata['cache_age_seconds']/3600:.1f} hours")
-                print(f"  Query time: {query_time:.2f}s")
-                print(f"  Cost savings: ~$0.02-0.04")
+                full_tokens = []
+                for token in gen:
+                    print(token, end="", flush=True)
+                    full_tokens.append(token)
 
-                continue  # Skip actual query
+                print()  # newline after streaming
+                print("-" * 80)
 
-            # If not in cache, do normal query
-            try:
-                # Use expanded query for retrieval (better coverage)
-                response = query_engine.query(expanded_query)
-                query_time = time.time() - start_time
+                # Apply syntax highlighting if code blocks present
+                full_text = "".join(full_tokens)
+                if "```" in full_text:
+                    highlighted = highlight_code_blocks(full_text)
+                    # Reprint with highlighting
+                    line_count = full_text.count('\n') + 3
+                    print(f"\033[F" * line_count)  # move cursor up
+                    print("\n" + "-" * 80)
+                    print("[ANSWER]")
+                    print("-" * 80)
+                    print(highlighted)
+                    print("-" * 80)
 
+                meta = get_meta()
                 query_count += 1
-                total_time += query_time
+                total_time += meta.query_time
                 successful += 1
 
-                # Stream the response
-                full_text = stream_response(response)
+                # Display metadata
+                if meta.cached:
+                    print(f"\n[METADATA] Cache hit! "
+                          f"(similarity: {meta.confidence:.1%}) "
+                          f"Time: {meta.query_time:.2f}s")
+                else:
+                    confidence = meta.confidence
+                    print(f"\n[METADATA]")
+                    print(f"  Query time: {meta.query_time:.2f}s")
+                    print(f"  Sources: {len(meta.sources)}")
+                    print(f"  Confidence: {confidence:.0%} "
+                          f"({meta.confidence_label}) - "
+                          f"{meta.confidence_explanation}")
+                    print(f"  Cached for future queries")
 
-                # Cache the response
-                cache.set(query, full_text, response.source_nodes)
-
-                # Calculate confidence
-                confidence, conf_label, conf_explanation = calculate_confidence(response.source_nodes)
-
-                print(f"\n[METADATA]")
-                print(f"  Query time: {query_time:.2f}s")
-                print(f"  Sources: {len(response.source_nodes)}")
-                print(f"  Confidence: {confidence:.0%} ({conf_label}) - {conf_explanation}")
-                print(f"  Cached for future queries")
-
-                if response.source_nodes:
-                    print(f"\n[SOURCE FILES]")
-                    seen_files = set()
-                    for node in response.source_nodes:
-                        filename = node.node.metadata.get("file_name", "unknown")
-                        if filename not in seen_files:
-                            seen_files.add(filename)
-                            print(f"  - {filename}")
+                    if meta.sources:
+                        print(f"\n[SOURCE FILES]")
+                        for src in meta.sources:
+                            name = src.get("file_name", "unknown") if isinstance(src, dict) else src
+                            print(f"  - {name}")
 
             except Exception as e:
-                query_time = time.time() - start_time
                 query_count += 1
-                total_time += query_time
-
                 log(f"Query failed: {e}", "ERROR")
                 print(f"\n[ERROR] {e}")
                 print("Please try rephrasing your question or check the logs.")
 
         except KeyboardInterrupt:
             print("\n\nInterrupted by user.")
-            print(f"\nSession summary:")
-            print(f"  Total queries: {query_count}")
-            print(f"  Successful: {successful}")
-            if query_count > 0:
-                print(f"  Average time: {total_time/query_count:.2f}s")
-            print("\nThank you for using BakkesMod RAG!\n")
+            print_session_summary(query_count, successful, total_time)
             break
         except Exception as e:
             log(f"Unexpected error: {e}", "ERROR")
             import traceback
             traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()

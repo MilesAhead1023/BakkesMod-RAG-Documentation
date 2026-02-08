@@ -1,6 +1,6 @@
 """
-Semantic Cache Manager
-======================
+Semantic Cache
+==============
 Caches query-response pairs with embedding-based similarity matching.
 Reduces costs by ~35% on repeated or similar queries.
 """
@@ -19,16 +19,16 @@ class SemanticCache:
         self,
         cache_dir: str = ".cache/semantic",
         similarity_threshold: float = 0.92,
-        ttl_seconds: int = 86400 * 7,  # 7 days
-        embed_model = None
+        ttl_seconds: int = 86400 * 7,
+        embed_model=None,
     ):
         """Initialize semantic cache.
 
         Args:
-            cache_dir: Directory to store cache files
-            similarity_threshold: Minimum similarity for cache hit (0.92 = 92%)
-            ttl_seconds: Time to live for cache entries (default 7 days)
-            embed_model: Embedding model from LlamaIndex Settings
+            cache_dir: Directory to store cache files.
+            similarity_threshold: Minimum similarity for cache hit (0.92 = 92%).
+            ttl_seconds: Time to live for cache entries (default 7 days).
+            embed_model: Embedding model from LlamaIndex Settings.
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -37,20 +37,22 @@ class SemanticCache:
         self.ttl_seconds = ttl_seconds
         self.embed_model = embed_model
 
-        # Cache index file
         self.index_file = self.cache_dir / "cache_index.json"
         self.cache_index = self._load_index()
 
     def _load_index(self) -> dict:
         """Load cache index from disk."""
         if self.index_file.exists():
-            with open(self.index_file, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.index_file, "r") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
         return {"entries": []}
 
     def _save_index(self):
         """Save cache index to disk."""
-        with open(self.index_file, 'w') as f:
+        with open(self.index_file, "w") as f:
             json.dump(self.cache_index, f, indent=2)
 
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
@@ -68,47 +70,42 @@ class SemanticCache:
         """Get cached response for query if similarity exceeds threshold.
 
         Args:
-            query: User query string
+            query: User query string.
 
         Returns:
-            Tuple of (response_text, similarity_score, metadata) if cache hit, else None
+            Tuple of (response_text, similarity_score, metadata) if cache hit,
+            else None.
         """
         if not self.embed_model:
             return None
 
-        # Get query embedding
         query_embedding = self.embed_model.get_text_embedding(query)
 
-        # Find best match
         best_match = None
         best_similarity = 0.0
         current_time = time.time()
 
         for entry in self.cache_index["entries"]:
-            # Skip expired entries
             if current_time - entry["timestamp"] > self.ttl_seconds:
                 continue
 
-            # Calculate similarity
             similarity = self._cosine_similarity(query_embedding, entry["embedding"])
 
             if similarity > best_similarity:
                 best_similarity = similarity
                 best_match = entry
 
-        # Check if best match exceeds threshold
         if best_match and best_similarity >= self.similarity_threshold:
-            # Load response from file
             response_file = self.cache_dir / best_match["response_file"]
 
             if response_file.exists():
-                with open(response_file, 'r') as f:
+                with open(response_file, "r") as f:
                     response_data = json.load(f)
 
                 metadata = {
                     "similarity": best_similarity,
                     "cached_query": best_match["query"],
-                    "cache_age_seconds": int(current_time - best_match["timestamp"])
+                    "cache_age_seconds": int(current_time - best_match["timestamp"]),
                 }
 
                 return response_data["response"], best_similarity, metadata
@@ -119,21 +116,18 @@ class SemanticCache:
         """Cache a query-response pair.
 
         Args:
-            query: User query string
-            response: Response text to cache
-            source_nodes: List of source nodes from retrieval
+            query: User query string.
+            response: Response text to cache.
+            source_nodes: List of source nodes from retrieval.
         """
         if not self.embed_model:
             return
 
-        # Get query embedding
         query_embedding = self.embed_model.get_text_embedding(query)
 
-        # Create unique ID
         query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
         timestamp = int(time.time())
 
-        # Save response to file
         response_file = f"response_{timestamp}_{query_hash}.json"
         response_path = self.cache_dir / response_file
 
@@ -143,23 +137,24 @@ class SemanticCache:
             "sources": [
                 {
                     "file_name": node.node.metadata.get("file_name", "unknown"),
-                    "score": node.score if hasattr(node, "score") else None
+                    "score": node.score if hasattr(node, "score") else None,
                 }
                 for node in source_nodes
             ],
-            "timestamp": timestamp
+            "timestamp": timestamp,
         }
 
-        with open(response_path, 'w') as f:
+        with open(response_path, "w") as f:
             json.dump(response_data, f, indent=2)
 
-        # Add to index
-        self.cache_index["entries"].append({
-            "query": query,
-            "embedding": query_embedding,
-            "response_file": response_file,
-            "timestamp": timestamp
-        })
+        self.cache_index["entries"].append(
+            {
+                "query": query,
+                "embedding": query_embedding,
+                "response_file": response_file,
+                "timestamp": timestamp,
+            }
+        )
 
         self._save_index()
 
@@ -167,13 +162,11 @@ class SemanticCache:
         """Remove expired cache entries."""
         current_time = time.time()
 
-        # Filter out expired
         valid_entries = []
         for entry in self.cache_index["entries"]:
             if current_time - entry["timestamp"] <= self.ttl_seconds:
                 valid_entries.append(entry)
             else:
-                # Delete response file
                 response_file = self.cache_dir / entry["response_file"]
                 if response_file.exists():
                     response_file.unlink()
@@ -182,16 +175,12 @@ class SemanticCache:
         self._save_index()
 
     def stats(self) -> dict:
-        """Get cache statistics.
-
-        Returns:
-            Dictionary with cache statistics
-        """
+        """Get cache statistics."""
         total = len(self.cache_index["entries"])
-
         current_time = time.time()
         valid = sum(
-            1 for entry in self.cache_index["entries"]
+            1
+            for entry in self.cache_index["entries"]
             if current_time - entry["timestamp"] <= self.ttl_seconds
         )
 
@@ -200,17 +189,15 @@ class SemanticCache:
             "valid_entries": valid,
             "expired_entries": total - valid,
             "cache_dir": str(self.cache_dir),
-            "similarity_threshold": self.similarity_threshold
+            "similarity_threshold": self.similarity_threshold,
         }
 
     def clear(self):
         """Clear all cache entries."""
-        # Delete all response files
         for entry in self.cache_index["entries"]:
             response_file = self.cache_dir / entry["response_file"]
             if response_file.exists():
                 response_file.unlink()
 
-        # Clear index
         self.cache_index["entries"] = []
         self._save_index()
