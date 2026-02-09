@@ -73,7 +73,7 @@ class QueryRewriter:
         Returns:
             Rewritten query optimized for BakkesMod SDK.
         """
-        if not self.use_llm:
+        if self.llm is None:
             return query
 
         prompt = (
@@ -100,15 +100,19 @@ class QueryRewriter:
         except Exception:
             return self.expand_with_synonyms(query)
 
-    def rewrite(self, query: str) -> str:
+    def rewrite(self, query: str, force_llm: bool = False) -> str:
         """Rewrite query using best available method.
 
         Args:
             query: Original user query.
+            force_llm: If True, use LLM rewriting even if not configured.
+                Falls back to synonym expansion if no LLM available.
 
         Returns:
             Rewritten/expanded query.
         """
+        if force_llm and self.llm is not None:
+            return self.rewrite_with_llm(query)
         if self.use_llm:
             return self.rewrite_with_llm(query)
         else:

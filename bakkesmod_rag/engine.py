@@ -71,6 +71,8 @@ class QueryResult:
     cached: bool
     expanded_query: str
     verification_warning: Optional[str] = None
+    retry_count: int = 0
+    all_attempts: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -259,54 +261,112 @@ class RAGEngine:
         # -- Query decomposition ----------------------------------------
         sub_queries = self.decomposer.decompose(expanded_query)
 
-        # -- Execute query (non-streaming via sync engine) --------------
+        # -- Execute query with Self-RAG retry loop ----------------------
         try:
-            source_nodes = []
-            if len(sub_queries) > 1:
-                # Iterative sub-query retrieval + merge
-                answer, sources, confidence, label, explanation = (
-                    self._execute_decomposed_query(sub_queries)
-                )
-            else:
-                answer, sources, confidence, label, explanation, source_nodes = (
-                    self._execute_single_query(expanded_query)
-                )
+            self_rag = self.config.self_rag
+            max_attempts = (self_rag.max_retries + 1) if self_rag.enabled else 1
+            best_result = None
+            all_attempts: list[dict] = []
+            current_query = expanded_query
 
-            # -- Answer verification ------------------------------------
-            verification_warning = None
-            if source_nodes:
-                vr = self.verifier.verify(answer, source_nodes, question)
-                if vr.confidence_penalty > 0:
-                    confidence = max(0.0, confidence - vr.confidence_penalty)
-                    label, _ = self._confidence_label(confidence)
-                verification_warning = vr.warning
+            for attempt in range(max_attempts):
+                source_nodes = []
+                if len(sub_queries) > 1 and attempt == 0:
+                    # Decomposed path only on first attempt
+                    answer, sources, confidence, label, explanation = (
+                        self._execute_decomposed_query(sub_queries)
+                    )
+                else:
+                    # Escalate top_k on retries
+                    if attempt > 0:
+                        adjust_retriever_top_k(
+                            self.fusion_retriever, attempt, self.config
+                        )
+                        # Force LLM rewrite for a different perspective
+                        if self_rag.force_llm_rewrite_on_retry:
+                            current_query = self.rewriter.rewrite(
+                                question, force_llm=True
+                            )
+
+                    answer, sources, confidence, label, explanation, source_nodes = (
+                        self._execute_single_query(current_query)
+                    )
+
+                # Answer verification
+                verification_warning = None
+                if source_nodes:
+                    vr = self.verifier.verify(answer, source_nodes, question)
+                    if vr.confidence_penalty > 0:
+                        confidence = max(0.0, confidence - vr.confidence_penalty)
+                        label, _ = self._confidence_label(confidence)
+                    verification_warning = vr.warning
+
+                all_attempts.append({
+                    "attempt": attempt,
+                    "confidence": confidence,
+                    "label": label,
+                    "num_sources": len(sources),
+                })
+
+                # Track best result (highest confidence)
+                if best_result is None or confidence > best_result["confidence"]:
+                    best_result = {
+                        "answer": answer,
+                        "sources": sources,
+                        "confidence": confidence,
+                        "label": label,
+                        "explanation": explanation,
+                        "verification_warning": verification_warning,
+                        "attempt": attempt,
+                    }
+
+                # Stop if confidence is good enough
+                if confidence >= self_rag.confidence_threshold:
+                    break
+
+                if attempt < max_attempts - 1:
+                    logger.info(
+                        "Self-RAG: confidence %.2f < %.2f, retrying "
+                        "(attempt %d/%d)",
+                        confidence,
+                        self_rag.confidence_threshold,
+                        attempt + 1,
+                        self_rag.max_retries,
+                    )
+
+            # Reset top_k to baseline after retries
+            if max_attempts > 1:
+                reset_retriever_top_k(self.fusion_retriever, self.config)
 
             query_time = time.time() - start_time
+            retry_count = best_result["attempt"]
 
             # -- Log retrieval metrics ----------------------------------
-            source_names = [s["file_name"] for s in sources]
+            source_names = [s["file_name"] for s in best_result["sources"]]
             self.logger.log_retrieval(
-                num_chunks=len(sources),
+                num_chunks=len(best_result["sources"]),
                 sources=source_names,
                 latency_ms=query_time * 1000,
             )
-            self.metrics.record_retrieval(len(sources))
+            self.metrics.record_retrieval(len(best_result["sources"]))
             self.metrics.record_query("success", query_time)
 
-            # -- Cache the response -------------------------------------
+            # -- Cache only the best response ---------------------------
             if use_cache and self.config.cache.enabled:
-                self.cache.set(question, answer, [])
+                self.cache.set(question, best_result["answer"], [])
 
             return QueryResult(
-                answer=answer,
-                sources=sources,
-                confidence=confidence,
-                confidence_label=label,
-                confidence_explanation=explanation,
+                answer=best_result["answer"],
+                sources=best_result["sources"],
+                confidence=best_result["confidence"],
+                confidence_label=best_result["label"],
+                confidence_explanation=best_result["explanation"],
                 query_time=query_time,
                 cached=False,
                 expanded_query=expanded_query,
-                verification_warning=verification_warning,
+                verification_warning=best_result["verification_warning"],
+                retry_count=retry_count,
+                all_attempts=all_attempts,
             )
         except Exception as e:
             query_time = time.time() - start_time

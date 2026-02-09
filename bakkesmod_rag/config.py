@@ -178,6 +178,14 @@ class VerificationConfig(BaseModel):
     ungrounded_confidence_penalty: float = 0.30
 
 
+class SelfRAGConfig(BaseModel):
+    """Configuration for Self-RAG corrective retry loop."""
+    enabled: bool = True
+    confidence_threshold: float = 0.70
+    max_retries: int = 2
+    force_llm_rewrite_on_retry: bool = True
+
+
 class RAGConfig(BaseModel):
     """Complete RAG system configuration."""
 
@@ -200,6 +208,7 @@ class RAGConfig(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     codegen: CodeGenConfig = Field(default_factory=CodeGenConfig)
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
+    self_rag: SelfRAGConfig = Field(default_factory=SelfRAGConfig)
 
 
 # Singleton
