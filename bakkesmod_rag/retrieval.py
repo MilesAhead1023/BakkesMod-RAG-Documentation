@@ -259,3 +259,71 @@ def _get_reranker(config: RAGConfig):
     logger.warning("No reranker available — proceeding without reranking")
     print("[RETRIEVAL] No reranker available — proceeding without reranking")
     return None
+
+
+def adjust_retriever_top_k(
+    fusion_retriever: QueryFusionRetriever,
+    attempt: int,
+    config: Optional[RAGConfig] = None,
+) -> None:
+    """Dynamically adjust top_k for all sub-retrievers based on retry attempt.
+
+    Uses escalation lists from config. Attempt 0 = initial, 1 = retry 1, etc.
+    Clamps to the last value if attempt exceeds the list length.
+
+    Args:
+        fusion_retriever: The fusion retriever whose sub-retrievers to adjust.
+        attempt: The retry attempt number (0-based).
+        config: RAGConfig instance.
+    """
+    if config is None:
+        from bakkesmod_rag.config import get_config
+        config = get_config()
+
+    if not config.retriever.adaptive_top_k:
+        return
+
+    escalation = config.retriever.top_k_escalation
+    kg_escalation = config.retriever.kg_top_k_escalation
+
+    # Clamp attempt to valid range
+    idx = min(attempt, len(escalation) - 1)
+    kg_idx = min(attempt, len(kg_escalation) - 1)
+
+    top_k = escalation[idx]
+    kg_top_k = kg_escalation[kg_idx]
+
+    for retriever in fusion_retriever.retrievers:
+        class_name = type(retriever).__name__
+        if "KnowledgeGraph" in class_name or "KG" in class_name:
+            if hasattr(retriever, "_similarity_top_k"):
+                retriever._similarity_top_k = kg_top_k
+            elif hasattr(retriever, "similarity_top_k"):
+                retriever.similarity_top_k = kg_top_k
+        else:
+            if hasattr(retriever, "_similarity_top_k"):
+                retriever._similarity_top_k = top_k
+            elif hasattr(retriever, "similarity_top_k"):
+                retriever.similarity_top_k = top_k
+
+    logger.info(
+        "Adjusted top_k: attempt=%d, vector/bm25=%d, kg=%d",
+        attempt, top_k, kg_top_k,
+    )
+
+
+def reset_retriever_top_k(
+    fusion_retriever: QueryFusionRetriever,
+    config: Optional[RAGConfig] = None,
+) -> None:
+    """Reset all sub-retriever top_k values to baseline config defaults.
+
+    Args:
+        fusion_retriever: The fusion retriever to reset.
+        config: RAGConfig instance.
+    """
+    if config is None:
+        from bakkesmod_rag.config import get_config
+        config = get_config()
+
+    adjust_retriever_top_k(fusion_retriever, attempt=0, config=config)

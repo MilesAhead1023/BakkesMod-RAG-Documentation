@@ -82,6 +82,11 @@ class RetrieverConfig(BaseModel):
     max_sub_queries: int = 4
     decomposition_complexity_threshold: int = 80
 
+    # Adaptive retrieval (dynamic top_k escalation across retries)
+    adaptive_top_k: bool = True
+    top_k_escalation: list[int] = [5, 8, 12]
+    kg_top_k_escalation: list[int] = [3, 5, 8]
+
 
 class ChunkingConfig(BaseModel):
     """Configuration for document chunking."""

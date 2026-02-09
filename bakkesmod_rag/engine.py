@@ -34,6 +34,8 @@ from bakkesmod_rag.retrieval import (
     build_or_load_indexes,
     create_fusion_retriever,
     create_query_engine,
+    adjust_retriever_top_k,
+    reset_retriever_top_k,
 )
 from bakkesmod_rag.code_generator import BakkesModCodeGenerator
 
