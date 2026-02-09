@@ -77,6 +77,11 @@ class RetrieverConfig(BaseModel):
 
     enable_llm_rewrite: bool = True
 
+    # Query decomposition
+    enable_query_decomposition: bool = True
+    max_sub_queries: int = 4
+    decomposition_complexity_threshold: int = 80
+
 
 class ChunkingConfig(BaseModel):
     """Configuration for document chunking."""

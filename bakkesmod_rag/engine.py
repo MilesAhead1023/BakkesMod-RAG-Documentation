@@ -20,6 +20,7 @@ from bakkesmod_rag.config import RAGConfig, get_config
 from bakkesmod_rag.llm_provider import get_llm, get_embed_model
 from bakkesmod_rag.cache import SemanticCache
 from bakkesmod_rag.query_rewriter import QueryRewriter
+from bakkesmod_rag.query_decomposer import QueryDecomposer
 from bakkesmod_rag.confidence import calculate_confidence
 from bakkesmod_rag.cost_tracker import CostTracker
 from bakkesmod_rag.observability import (
@@ -144,6 +145,14 @@ class RAGEngine:
             use_llm=self.config.retriever.enable_llm_rewrite,
         )
 
+        # Query decomposer (hybrid rule + LLM decomposition) -----------
+        self.decomposer = QueryDecomposer(
+            llm=self.llm,
+            max_sub_queries=self.config.retriever.max_sub_queries,
+            complexity_threshold=self.config.retriever.decomposition_complexity_threshold,
+            enable_decomposition=self.config.retriever.enable_query_decomposition,
+        )
+
         # Cost tracking -------------------------------------------------
         self.cost_tracker = CostTracker(config=self.config)
 
@@ -232,30 +241,25 @@ class RAGEngine:
 
         self.metrics.record_cache_miss()
 
+        # -- Query decomposition ----------------------------------------
+        sub_queries = self.decomposer.decompose(expanded_query)
+
         # -- Execute query (non-streaming via sync engine) --------------
         try:
-            response = self.query_engine_sync.query(expanded_query)
+            if len(sub_queries) > 1:
+                # Iterative sub-query retrieval + merge
+                answer, sources, confidence, label, explanation = (
+                    self._execute_decomposed_query(sub_queries)
+                )
+            else:
+                answer, sources, confidence, label, explanation = (
+                    self._execute_single_query(expanded_query)
+                )
+
             query_time = time.time() - start_time
 
-            answer = str(response)
-
-            # -- Confidence scoring -------------------------------------
-            confidence, label, explanation = calculate_confidence(
-                response.source_nodes
-            )
-
-            # -- Extract source metadata --------------------------------
-            sources: list[dict] = []
-            source_names: list[str] = []
-            for node in response.source_nodes:
-                fname = node.node.metadata.get("file_name", "unknown")
-                sources.append({
-                    "file_name": fname,
-                    "score": node.score if hasattr(node, "score") else None,
-                })
-                source_names.append(fname)
-
             # -- Log retrieval metrics ----------------------------------
+            source_names = [s["file_name"] for s in sources]
             self.logger.log_retrieval(
                 num_chunks=len(sources),
                 sources=source_names,
@@ -266,7 +270,7 @@ class RAGEngine:
 
             # -- Cache the response -------------------------------------
             if use_cache and self.config.cache.enabled:
-                self.cache.set(question, answer, response.source_nodes)
+                self.cache.set(question, answer, [])
 
             return QueryResult(
                 answer=answer,
@@ -283,6 +287,83 @@ class RAGEngine:
             self.logger.log_error(e, {"query": question})
             self.metrics.record_query("error", query_time)
             raise
+
+    # ---- internal query helpers ----------------------------------------
+
+    def _execute_single_query(
+        self, query: str
+    ) -> tuple[str, list[dict], float, str, str]:
+        """Execute a single query against the sync engine.
+
+        Returns:
+            Tuple of (answer, sources, confidence, label, explanation).
+        """
+        response = self.query_engine_sync.query(query)
+        answer = str(response)
+
+        confidence, label, explanation = calculate_confidence(
+            response.source_nodes
+        )
+
+        sources: list[dict] = []
+        for node in response.source_nodes:
+            fname = node.node.metadata.get("file_name", "unknown")
+            sources.append({
+                "file_name": fname,
+                "score": node.score if hasattr(node, "score") else None,
+            })
+
+        return answer, sources, confidence, label, explanation
+
+    def _execute_decomposed_query(
+        self, sub_queries: list[str]
+    ) -> tuple[str, list[dict], float, str, str]:
+        """Execute multiple sub-queries iteratively and merge results.
+
+        Each sub-query's answer is prepended as context for the next,
+        enabling iterative context building.
+
+        Returns:
+            Tuple of (merged_answer, all_sources, avg_confidence, label,
+            explanation).
+        """
+        sub_answers: list[str] = []
+        all_sources: list[dict] = []
+        all_confidences: list[float] = []
+        seen_files: set[str] = set()
+
+        for i, sq in enumerate(sub_queries):
+            logger.info("Sub-query %d/%d: %s", i + 1, len(sub_queries), sq[:80])
+            answer, sources, conf, _, _ = self._execute_single_query(sq)
+            sub_answers.append(answer)
+            all_confidences.append(conf)
+
+            for s in sources:
+                fname = s["file_name"]
+                if fname not in seen_files:
+                    all_sources.append(s)
+                    seen_files.add(fname)
+
+        # Merge sub-answers
+        merged = QueryDecomposer.merge_sub_answers(
+            sub_queries, sub_answers, llm=self.llm
+        )
+
+        # Average confidence across sub-queries
+        avg_conf = (
+            sum(all_confidences) / len(all_confidences)
+            if all_confidences
+            else 0.0
+        )
+
+        if avg_conf >= 0.8:
+            label, explanation = "HIGH", "High confidence across sub-queries"
+        elif avg_conf >= 0.5:
+            label, explanation = "MEDIUM", "Medium confidence across sub-queries"
+        else:
+            label, explanation = "LOW", "Low confidence across sub-queries"
+
+        return merged, all_sources, avg_conf, label, explanation
 
     # ---- streaming query -----------------------------------------------
 
@@ -344,6 +425,44 @@ class RAGEngine:
                 return cached_gen(), lambda: result
 
         self.metrics.record_cache_miss()
+
+        # -- Query decomposition ----------------------------------------
+        sub_queries = self.decomposer.decompose(expanded_query)
+
+        if len(sub_queries) > 1:
+            # Decomposed: run sub-queries non-streaming, stream merged answer
+            answer, sources, confidence, label, explanation = (
+                self._execute_decomposed_query(sub_queries)
+            )
+            query_time = time.time() - start_time
+
+            source_names = [s["file_name"] for s in sources]
+            self.logger.log_retrieval(
+                num_chunks=len(sources),
+                sources=source_names,
+                latency_ms=query_time * 1000,
+            )
+            self.metrics.record_retrieval(len(sources))
+            self.metrics.record_query("success", query_time)
+
+            if use_cache and self.config.cache.enabled:
+                self.cache.set(question, answer, [])
+
+            result = QueryResult(
+                answer=answer,
+                sources=sources,
+                confidence=confidence,
+                confidence_label=label,
+                confidence_explanation=explanation,
+                query_time=query_time,
+                cached=False,
+                expanded_query=expanded_query,
+            )
+
+            def decomposed_gen() -> Generator[str, None, None]:
+                yield answer
+
+            return decomposed_gen(), lambda: result
 
         # -- Execute streaming query (via streaming engine) -------------
         response = self.query_engine_streaming.query(expanded_query)

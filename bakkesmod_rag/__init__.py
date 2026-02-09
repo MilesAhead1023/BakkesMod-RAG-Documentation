@@ -27,6 +27,7 @@ from bakkesmod_rag.observability import (
 )
 from bakkesmod_rag.cost_tracker import CostTracker, get_tracker
 from bakkesmod_rag.setup_keys import ensure_api_keys
+from bakkesmod_rag.query_decomposer import QueryDecomposer
 
 
 __all__ = [
@@ -39,6 +40,8 @@ __all__ = [
     "reload_config",
     # Setup
     "ensure_api_keys",
+    # Query processing
+    "QueryDecomposer",
     # Resilience
     "CircuitBreaker",
     "CircuitBreakerOpen",
