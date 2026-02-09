@@ -86,6 +86,10 @@ class CodeResult:
         explanation: The original natural-language description that was used.
         validation: Validation dict from ``CodeValidator.validate_project``.
         features_used: List of feature flags that were detected/enabled.
+        fix_iterations: Number of validate→fix loop iterations.
+        fix_history: Per-iteration error/warning details.
+        compile_result: Compilation result dict (if compiler was available).
+        generation_id: Feedback store ID for recording user feedback.
     """
 
     header: str
@@ -94,6 +98,10 @@ class CodeResult:
     explanation: str
     validation: dict
     features_used: List[str] = field(default_factory=list)
+    fix_iterations: int = 0
+    fix_history: List[dict] = field(default_factory=list)
+    compile_result: Optional[dict] = None
+    generation_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +203,7 @@ class RAGEngine:
         self.code_gen = BakkesModCodeGenerator(
             llm=self.llm,
             query_engine=self.query_engine_sync,
+            config=self.config.codegen,
         )
 
         print(
@@ -635,14 +644,15 @@ class RAGEngine:
         """Generate a complete BakkesMod plugin project using RAG context.
 
         Uses the full pipeline: RAG retrieval -> feature detection ->
-        LLM generation -> project scaffolding -> validation.
+        LLM generation -> project scaffolding -> validation -> self-improving
+        fix loop (if enabled).
 
         Args:
             description: Natural language description of the desired plugin.
 
         Returns:
             A ``CodeResult`` containing all project files, validation
-            results, and detected features.
+            results, detected features, and fix iteration history.
         """
         result = self.code_gen.generate_full_plugin_with_rag(description)
 
@@ -653,4 +663,26 @@ class RAGEngine:
             explanation=description,
             validation=result.get("validation", {}),
             features_used=result.get("features_used", []),
+            fix_iterations=result.get("fix_iterations", 0),
+            fix_history=result.get("fix_history", []),
+            compile_result=result.get("compile_result"),
+            generation_id=result.get("generation_id"),
         )
+
+    def record_code_feedback(
+        self,
+        generation_id: str,
+        accepted: bool,
+        user_edits: Optional[str] = None,
+    ) -> bool:
+        """Record user feedback for a code generation.
+
+        Args:
+            generation_id: ID from ``CodeResult.generation_id``.
+            accepted: Whether the user accepted the code.
+            user_edits: Description of user modifications (optional).
+
+        Returns:
+            True if feedback was recorded.
+        """
+        return self.code_gen.record_feedback(generation_id, accepted, user_edits)

@@ -14,7 +14,7 @@ and code_validator.py into the unified bakkesmod_rag package.
 
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger("bakkesmod_rag.code_generator")
 
@@ -1001,24 +1001,75 @@ class BakkesModCodeGenerator:
     a pre-verified LLM and an optional query engine from the caller (typically
     the ``RAGEngine``).
 
+    When self-improving mode is enabled (via ``CodeGenConfig``), generated
+    code goes through an iterative validate → fix → compile → fix loop
+    that feeds errors back to the LLM for correction.  A feedback store
+    records generation history so that successful patterns can be reused
+    as few-shot examples.
+
     Args:
         llm: A verified LlamaIndex LLM instance (from ``llm_provider.get_llm``).
         query_engine: Optional LlamaIndex query engine for RAG-augmented
             generation.  When ``None``, ``generate_plugin_with_rag`` falls
             back to direct LLM generation.
+        config: Optional ``CodeGenConfig``.  Controls self-improving mode,
+            compilation, and feedback persistence.
     """
 
-    def __init__(self, llm, query_engine=None):
+    def __init__(self, llm, query_engine=None, config=None):
         """Initialize the code generator.
 
         Args:
             llm: A verified LlamaIndex LLM instance.
             query_engine: Optional query engine for RAG context lookups.
+            config: Optional ``CodeGenConfig`` for self-improving settings.
         """
         self.llm = llm
         self.query_engine = query_engine
         self.template_engine = PluginTemplateEngine()
         self.validator = CodeValidator()
+
+        # Import config type lazily to avoid circular imports
+        from bakkesmod_rag.config import CodeGenConfig
+        self._config = config or CodeGenConfig()
+
+        # Compiler (optional — graceful if MSVC not found)
+        self.compiler = None
+        if self._config.enable_compilation:
+            try:
+                from bakkesmod_rag.compiler import PluginCompiler
+                sdk_dirs = self._find_sdk_include_dirs()
+                self.compiler = PluginCompiler(
+                    msvc_path=self._config.msvc_path,
+                    sdk_include_dirs=sdk_dirs,
+                )
+                if not self.compiler.available:
+                    self.compiler = None
+            except Exception as e:
+                logger.warning("Compiler initialization failed: %s", e)
+                self.compiler = None
+
+        # Feedback store (optional)
+        self.feedback = None
+        if self._config.feedback_enabled:
+            try:
+                from bakkesmod_rag.feedback_store import FeedbackStore
+                self.feedback = FeedbackStore(
+                    feedback_dir=self._config.feedback_dir,
+                )
+            except Exception as e:
+                logger.warning("Feedback store initialization failed: %s", e)
+                self.feedback = None
+
+    @staticmethod
+    def _find_sdk_include_dirs() -> List[str]:
+        """Find BakkesMod SDK header directories for compiler include paths."""
+        import os
+        dirs = []
+        for candidate in ("docs_bakkesmod_only", "templates"):
+            if os.path.isdir(candidate):
+                dirs.append(os.path.abspath(candidate))
+        return dirs
 
     # ------------------------------------------------------------------
     # Public generation methods
@@ -1210,21 +1261,27 @@ Return ONLY the C++ function code.
     def generate_full_plugin_with_rag(self, description: str) -> Dict:
         """Generate a complete BakkesMod plugin project using RAG context.
 
-        End-to-end flow:
-        1. Use RAG to retrieve relevant SDK docs.
-        2. Detect which features are needed from the description.
-        3. Generate plugin.h and plugin.cpp with LLM + RAG context.
-        4. Wrap in full project scaffold (all 12 files).
-        5. Validate with ``CodeValidator.validate_project()``.
-        6. Return complete project.
+        When self-improving mode is enabled, the code goes through an
+        iterative validate → fix → compile → fix loop:
+
+        1. Retrieve RAG context from SDK documentation.
+        2. Check feedback store for similar successful patterns (few-shot).
+        3. Detect features and derive plugin name.
+        4. Generate plugin.h and plugin.cpp with LLM + RAG context.
+        5. Wrap in full project scaffold (all 12 files).
+        6. **Validate** — if errors, feed them back to LLM for fix.
+        7. **Compile** (if MSVC available) — if errors, feed them back.
+        8. Repeat steps 6-7 up to ``max_fix_iterations`` times.
+        9. Return the best version (fewest total errors).
 
         Args:
             description: Natural language description of the desired plugin.
 
         Returns:
-            Dict with ``project_files`` (Dict[str, str]), ``header``,
-            ``implementation``, ``features_used`` (List[str]),
-            ``validation`` (Dict), and ``explanation`` (str).
+            Dict with ``project_files``, ``header``, ``implementation``,
+            ``features_used``, ``validation``, ``explanation``,
+            ``fix_iterations``, ``fix_history``, ``compile_result``,
+            and ``generation_id``.
         """
         # 1. Retrieve RAG context
         sdk_context = ""
@@ -1236,18 +1293,25 @@ Return ONLY the C++ function code.
             except Exception as e:
                 logger.warning("RAG context retrieval failed: %s", e)
 
-        # 2. Detect features from description
+        # 2. Get few-shot examples from feedback store
+        few_shot_prompt = ""
+        if self.feedback:
+            features_preview = self._detect_features(description)
+            few_shot_prompt = self.feedback.format_few_shot_prompt(features_preview)
+
+        # 3. Detect features from description
         features = self._detect_features(description)
 
-        # 3. Derive a C++ class name from description
+        # 4. Derive a C++ class name from description
         plugin_name = self._derive_plugin_name(description)
 
-        # 4. Generate plugin.h and plugin.cpp with LLM
+        # 5. Generate plugin.h and plugin.cpp with LLM
         llm_code = self._generate_with_llm(
-            plugin_name, description, features, sdk_context
+            plugin_name, description, features, sdk_context,
+            few_shot_context=few_shot_prompt,
         )
 
-        # 5. Generate full project scaffold
+        # 6. Generate full project scaffold
         project_files = self.template_engine.generate_complete_project(
             plugin_name=plugin_name,
             description=description,
@@ -1255,7 +1319,6 @@ Return ONLY the C++ function code.
         )
 
         # Override plugin.h and plugin.cpp with LLM-generated versions
-        # (if LLM produced valid output)
         header_key = f"{plugin_name}.h"
         impl_key = f"{plugin_name}.cpp"
         if llm_code.get("header"):
@@ -1263,17 +1326,157 @@ Return ONLY the C++ function code.
         if llm_code.get("implementation"):
             project_files[impl_key] = llm_code["implementation"]
 
-        # 6. Validate
-        validation = self.validator.validate_project(project_files)
+        # 7. Validate (and optionally self-improve)
+        fix_history: List[Dict[str, Any]] = []
+        best_files = dict(project_files)
+        best_error_count = float("inf")
+        compile_result_dict: Optional[Dict] = None
+
+        if self._config.self_improving:
+            max_iters = self._config.max_fix_iterations
+            prev_error_sig = None
+
+            for iteration in range(max_iters):
+                # Validate
+                validation = self.validator.validate_project(project_files)
+                val_errors = validation.get("errors", [])
+                val_warnings = validation.get("warnings", [])
+
+                # Compile (if compiler available)
+                compile_errors: List[str] = []
+                compile_warnings: List[str] = []
+                compile_success = None
+                if self.compiler:
+                    from bakkesmod_rag.compiler import CompileResult
+                    cr = self.compiler.compile_project(project_files)
+                    compile_success = cr.success
+                    compile_errors = [str(e) for e in cr.errors]
+                    compile_warnings = [str(w) for w in cr.warnings]
+                    compile_result_dict = {
+                        "success": cr.success,
+                        "errors": compile_errors,
+                        "warnings": compile_warnings,
+                        "output": cr.output[:500],
+                    }
+
+                all_errors = val_errors + compile_errors
+                total_errors = len(all_errors)
+
+                # Track best version (fewest errors)
+                if total_errors < best_error_count:
+                    best_error_count = total_errors
+                    best_files = dict(project_files)
+
+                fix_history.append({
+                    "iteration": iteration,
+                    "validation_errors": val_errors,
+                    "validation_warnings": val_warnings,
+                    "compile_errors": compile_errors,
+                    "compile_warnings": compile_warnings,
+                    "compile_success": compile_success,
+                    "total_errors": total_errors,
+                })
+
+                logger.info(
+                    "Self-improving iteration %d/%d: %d errors (%d validation, %d compile)",
+                    iteration + 1, max_iters, total_errors,
+                    len(val_errors), len(compile_errors),
+                )
+
+                # Stop if no errors
+                if total_errors == 0:
+                    logger.info("Code is clean after %d iterations", iteration + 1)
+                    break
+
+                # Stop if same errors as last iteration (no progress)
+                error_sig = tuple(sorted(all_errors))
+                if error_sig == prev_error_sig:
+                    logger.info(
+                        "No progress (same %d errors), stopping fix loop",
+                        total_errors,
+                    )
+                    break
+                prev_error_sig = error_sig
+
+                # Don't fix on the last iteration — just report
+                if iteration >= max_iters - 1:
+                    break
+
+                # Feed errors back to LLM for correction
+                fixed_code = self._fix_with_llm(
+                    project_files, all_errors, iteration, plugin_name,
+                )
+                if fixed_code.get("header"):
+                    project_files[header_key] = fixed_code["header"]
+                if fixed_code.get("implementation"):
+                    project_files[impl_key] = fixed_code["implementation"]
+        else:
+            # Self-improving disabled — single validation pass
+            validation = self.validator.validate_project(project_files)
+            best_files = dict(project_files)
+            if self.compiler:
+                cr = self.compiler.compile_project(project_files)
+                compile_result_dict = {
+                    "success": cr.success,
+                    "errors": [str(e) for e in cr.errors],
+                    "warnings": [str(w) for w in cr.warnings],
+                    "output": cr.output[:500],
+                }
+
+        # Use best version
+        project_files = best_files
+        final_validation = self.validator.validate_project(project_files)
+
+        # Record in feedback store
+        generation_id = None
+        if self.feedback:
+            generation_id = self.feedback.record_generation(
+                description=description,
+                features=features,
+                generated_files=project_files,
+                validation_errors=final_validation.get("errors", []),
+                validation_warnings=final_validation.get("warnings", []),
+                fix_iterations=len(fix_history),
+                compile_attempted=self.compiler is not None,
+                compile_success=(
+                    compile_result_dict.get("success", False)
+                    if compile_result_dict else False
+                ),
+                compiler_errors=(
+                    compile_result_dict.get("errors", [])
+                    if compile_result_dict else []
+                ),
+            )
 
         return {
             "project_files": project_files,
             "header": project_files.get(header_key, ""),
             "implementation": project_files.get(impl_key, ""),
             "features_used": features,
-            "validation": validation,
+            "validation": final_validation,
             "explanation": description,
+            "fix_iterations": len(fix_history),
+            "fix_history": fix_history,
+            "compile_result": compile_result_dict,
+            "generation_id": generation_id,
         }
+
+    def record_feedback(
+        self, generation_id: str, accepted: bool, user_edits: Optional[str] = None
+    ) -> bool:
+        """Record user feedback for a generation.
+
+        Args:
+            generation_id: ID returned from generation.
+            accepted: Whether the user accepted the code.
+            user_edits: Description of user modifications (optional).
+
+        Returns:
+            True if feedback was recorded successfully.
+        """
+        if not self.feedback or not generation_id:
+            return False
+        return self.feedback.update_feedback(generation_id, accepted, user_edits)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -1364,6 +1567,7 @@ Return ONLY the C++ function code.
         description: str,
         features: List[str],
         sdk_context: str,
+        few_shot_context: str = "",
     ) -> Dict[str, str]:
         """Use LLM to generate plugin.h and plugin.cpp with SDK context.
 
@@ -1372,6 +1576,7 @@ Return ONLY the C++ function code.
             description: User's requirements.
             features: Detected feature flags.
             sdk_context: RAG-retrieved SDK documentation.
+            few_shot_context: Optional few-shot examples from feedback store.
 
         Returns:
             Dict with ``header`` and ``implementation`` (empty on failure).
@@ -1387,7 +1592,7 @@ FEATURES TO IMPLEMENT: {features_desc}
 
 RELEVANT SDK DOCUMENTATION:
 {sdk_context or "No SDK context available."}
-
+{few_shot_context}
 Generate a complete BakkesMod plugin with these EXACT patterns:
 
 CRITICAL REQUIREMENTS:
@@ -1461,3 +1666,101 @@ IMPLEMENTATION FILE:
             "header": header_match.group(1).strip() if header_match else "",
             "implementation": impl_match.group(1).strip() if impl_match else "",
         }
+
+    def _format_error_feedback(
+        self,
+        errors: List[str],
+        project_files: Dict[str, str],
+        plugin_name: str,
+    ) -> str:
+        """Format validation/compiler errors as an LLM feedback prompt.
+
+        Constructs a structured prompt that describes each error and
+        includes the current code so the LLM can see exactly what needs
+        fixing.
+
+        Args:
+            errors: List of error description strings.
+            project_files: Current project files.
+            plugin_name: Plugin class name (to find the right files).
+
+        Returns:
+            Formatted feedback prompt string.
+        """
+        header_key = f"{plugin_name}.h"
+        impl_key = f"{plugin_name}.cpp"
+
+        header_code = project_files.get(header_key, "")
+        impl_code = project_files.get(impl_key, "")
+
+        error_list = "\n".join(f"  {i+1}. {e}" for i, e in enumerate(errors))
+
+        return f"""The following errors were found in the generated code:
+
+{error_list}
+
+CURRENT HEADER FILE ({header_key}):
+```cpp
+{header_code}
+```
+
+CURRENT IMPLEMENTATION FILE ({impl_key}):
+```cpp
+{impl_code}
+```
+
+Fix ALL of the listed errors. Keep the same plugin structure and class name.
+Return the corrected code in the same format:
+
+HEADER FILE:
+```cpp
+[corrected header]
+```
+
+IMPLEMENTATION FILE:
+```cpp
+[corrected implementation]
+```
+"""
+
+    def _fix_with_llm(
+        self,
+        project_files: Dict[str, str],
+        errors: List[str],
+        iteration: int,
+        plugin_name: str,
+    ) -> Dict[str, str]:
+        """Send errors and current code back to the LLM for correction.
+
+        Args:
+            project_files: Current project files with errors.
+            errors: List of error descriptions to fix.
+            iteration: Current fix iteration number (for logging).
+            plugin_name: Plugin class name.
+
+        Returns:
+            Dict with ``header`` and ``implementation`` (corrected code,
+            or empty strings on failure).
+        """
+        feedback = self._format_error_feedback(errors, project_files, plugin_name)
+
+        prompt = f"""You are a BakkesMod plugin code fixer. Fix iteration {iteration + 1}.
+
+{feedback}"""
+
+        try:
+            response = self.llm.complete(prompt)
+            fixed = self._parse_code_response(response.text)
+            if fixed.get("header") or fixed.get("implementation"):
+                logger.info(
+                    "LLM fix iteration %d produced corrected code", iteration + 1
+                )
+            else:
+                logger.warning(
+                    "LLM fix iteration %d returned unparseable response",
+                    iteration + 1,
+                )
+            return fixed
+        except Exception as e:
+            logger.error("LLM fix attempt %d failed: %s", iteration + 1, e)
+            return {"header": "", "implementation": ""}

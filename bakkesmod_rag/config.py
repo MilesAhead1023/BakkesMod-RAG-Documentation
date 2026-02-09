@@ -167,6 +167,15 @@ class CodeGenConfig(BaseModel):
     enabled: bool = True
     max_context_chunks: int = 5
     validate_output: bool = True
+    # Self-improving generation loop
+    self_improving: bool = True
+    max_fix_iterations: int = 5
+    # MSVC compilation
+    enable_compilation: bool = True
+    msvc_path: Optional[str] = None  # auto-detected via vswhere if None
+    # Feedback learning
+    feedback_enabled: bool = True
+    feedback_dir: str = ".cache/feedback"
 
 
 class VerificationConfig(BaseModel):

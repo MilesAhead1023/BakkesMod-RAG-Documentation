@@ -29,6 +29,8 @@ from bakkesmod_rag.cost_tracker import CostTracker, get_tracker
 from bakkesmod_rag.setup_keys import ensure_api_keys
 from bakkesmod_rag.query_decomposer import QueryDecomposer
 from bakkesmod_rag.answer_verifier import AnswerVerifier, VerificationResult
+from bakkesmod_rag.compiler import PluginCompiler, CompileResult, CompilerError
+from bakkesmod_rag.feedback_store import FeedbackStore, FeedbackEntry
 
 
 __all__ = [
@@ -46,6 +48,13 @@ __all__ = [
     # Verification
     "AnswerVerifier",
     "VerificationResult",
+    # Compiler
+    "PluginCompiler",
+    "CompileResult",
+    "CompilerError",
+    # Feedback
+    "FeedbackStore",
+    "FeedbackEntry",
     # Resilience
     "CircuitBreaker",
     "CircuitBreakerOpen",
