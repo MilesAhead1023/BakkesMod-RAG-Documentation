@@ -31,6 +31,7 @@ from bakkesmod_rag.query_decomposer import QueryDecomposer
 from bakkesmod_rag.answer_verifier import AnswerVerifier, VerificationResult
 from bakkesmod_rag.compiler import PluginCompiler, CompileResult, CompilerError
 from bakkesmod_rag.feedback_store import FeedbackStore, FeedbackEntry
+from bakkesmod_rag.cpp_analyzer import CppAnalyzer, CppClassInfo, CppMethodInfo
 
 
 __all__ = [
@@ -55,6 +56,10 @@ __all__ = [
     # Feedback
     "FeedbackStore",
     "FeedbackEntry",
+    # C++ Intelligence
+    "CppAnalyzer",
+    "CppClassInfo",
+    "CppMethodInfo",
     # Resilience
     "CircuitBreaker",
     "CircuitBreakerOpen",

@@ -162,6 +162,21 @@ class StorageConfig(BaseModel):
     logs_dir: str = "logs"
 
 
+class CppIntelligenceConfig(BaseModel):
+    """Configuration for C++ structural analysis.
+
+    Controls tree-sitter-based extraction of class hierarchies,
+    method signatures, and inheritance chains from SDK header files.
+    """
+    enabled: bool = True
+    max_methods_in_metadata: int = 30
+    max_signatures_in_metadata: int = 20
+    max_related_types: int = 15
+    include_inheritance_chain: bool = True
+    include_method_signatures: bool = True
+    include_forward_declarations: bool = True
+
+
 class CodeGenConfig(BaseModel):
     """Configuration for code generation."""
     enabled: bool = True
@@ -216,6 +231,7 @@ class RAGConfig(BaseModel):
     production: ProductionConfig = Field(default_factory=ProductionConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     codegen: CodeGenConfig = Field(default_factory=CodeGenConfig)
+    cpp_intelligence: CppIntelligenceConfig = Field(default_factory=CppIntelligenceConfig)
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
     self_rag: SelfRAGConfig = Field(default_factory=SelfRAGConfig)
 

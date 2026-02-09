@@ -147,6 +147,10 @@ def parse_nodes(
         print(f"[LOADER] Parsed {len(code_docs)} code files (.h/.cpp) -> {len(code_nodes)} nodes")
         logger.info("Parsed %d code files -> %d nodes", len(code_docs), len(code_nodes))
 
+    # -- C++ structural metadata injection --------------------------------
+    if config.cpp_intelligence.enabled:
+        _inject_cpp_metadata(nodes, documents, config)
+
     print(f"[LOADER] Total nodes: {len(nodes)}")
     logger.info("Total nodes: %d", len(nodes))
     return nodes
@@ -275,3 +279,88 @@ def _parse_code_ast(
             chunk_overlap=config.chunking.chunk_overlap,
         )
         return fallback.get_nodes_from_documents(code_docs)
+
+
+def _inject_cpp_metadata(
+    nodes: List[BaseNode],
+    documents: List[Document],
+    config,
+) -> None:
+    """Inject C++ structural metadata into nodes from .h files.
+
+    Runs the CppAnalyzer over all .h source documents, builds the full
+    inheritance hierarchy, and attaches typed metadata (class name,
+    base class, inheritance chain, method signatures, related types) to
+    every node whose ``file_path`` matches an analyzed header.
+
+    This enables the LLM to understand C++ relationships (inheritance,
+    return types, parameter types) at retrieval time — not just text
+    similarity.
+
+    Args:
+        nodes: All parsed nodes (modified in-place).
+        documents: Original documents (used for source paths).
+        config: RAGConfig instance.
+    """
+    try:
+        from bakkesmod_rag.cpp_analyzer import CppAnalyzer
+    except ImportError as e:
+        logger.warning("CppAnalyzer unavailable, skipping C++ metadata: %s", e)
+        return
+
+    # Collect unique directories containing .h files
+    h_dirs: set = set()
+    for doc in documents:
+        fp = doc.metadata.get("file_path", "")
+        if fp.endswith(".h"):
+            import os as _os
+            h_dirs.add(_os.path.dirname(fp))
+
+    if not h_dirs:
+        return
+
+    analyzer = CppAnalyzer()
+    all_classes = {}
+    for d in h_dirs:
+        all_classes.update(analyzer.analyze_directory(d))
+
+    if not all_classes:
+        logger.info("No C++ classes found, skipping metadata injection")
+        return
+
+    enriched_count = 0
+    for node in nodes:
+        fp = node.metadata.get("file_path", "")
+        if not fp.endswith(".h"):
+            continue
+
+        # Find which class(es) this node's file defines
+        file_classes = [
+            cls for cls in all_classes.values()
+            if _paths_match(cls.file, fp)
+        ]
+
+        if not file_classes:
+            continue
+
+        # Use the primary class (usually one per file)
+        cls = file_classes[0]
+        cpp_meta = analyzer.format_metadata_for_node(cls, all_classes)
+        node.metadata.update(cpp_meta)
+        enriched_count += 1
+
+    print(f"[LOADER] C++ metadata injected into {enriched_count} nodes "
+          f"({len(all_classes)} classes analyzed)")
+    logger.info(
+        "C++ metadata injected into %d nodes (%d classes analyzed)",
+        enriched_count, len(all_classes),
+    )
+
+
+def _paths_match(path_a: str, path_b: str) -> bool:
+    """Check if two file paths refer to the same file (cross-platform)."""
+    import os as _os
+    try:
+        return _os.path.normpath(path_a) == _os.path.normpath(path_b)
+    except (TypeError, ValueError):
+        return str(path_a) == str(path_b)
