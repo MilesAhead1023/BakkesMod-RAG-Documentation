@@ -169,6 +169,15 @@ class CodeGenConfig(BaseModel):
     validate_output: bool = True
 
 
+class VerificationConfig(BaseModel):
+    """Configuration for answer verification."""
+    enabled: bool = True
+    grounded_threshold: float = 0.75
+    borderline_threshold: float = 0.55
+    borderline_confidence_penalty: float = 0.15
+    ungrounded_confidence_penalty: float = 0.30
+
+
 class RAGConfig(BaseModel):
     """Complete RAG system configuration."""
 
@@ -190,6 +199,7 @@ class RAGConfig(BaseModel):
     production: ProductionConfig = Field(default_factory=ProductionConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     codegen: CodeGenConfig = Field(default_factory=CodeGenConfig)
+    verification: VerificationConfig = Field(default_factory=VerificationConfig)
 
 
 # Singleton

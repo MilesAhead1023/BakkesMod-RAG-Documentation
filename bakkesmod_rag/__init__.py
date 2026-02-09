@@ -28,6 +28,7 @@ from bakkesmod_rag.observability import (
 from bakkesmod_rag.cost_tracker import CostTracker, get_tracker
 from bakkesmod_rag.setup_keys import ensure_api_keys
 from bakkesmod_rag.query_decomposer import QueryDecomposer
+from bakkesmod_rag.answer_verifier import AnswerVerifier, VerificationResult
 
 
 __all__ = [
@@ -42,6 +43,9 @@ __all__ = [
     "ensure_api_keys",
     # Query processing
     "QueryDecomposer",
+    # Verification
+    "AnswerVerifier",
+    "VerificationResult",
     # Resilience
     "CircuitBreaker",
     "CircuitBreakerOpen",

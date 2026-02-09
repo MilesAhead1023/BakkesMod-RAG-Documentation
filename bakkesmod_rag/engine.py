@@ -22,6 +22,7 @@ from bakkesmod_rag.cache import SemanticCache
 from bakkesmod_rag.query_rewriter import QueryRewriter
 from bakkesmod_rag.query_decomposer import QueryDecomposer
 from bakkesmod_rag.confidence import calculate_confidence
+from bakkesmod_rag.answer_verifier import AnswerVerifier
 from bakkesmod_rag.cost_tracker import CostTracker
 from bakkesmod_rag.observability import (
     StructuredLogger,
@@ -69,6 +70,7 @@ class QueryResult:
     query_time: float
     cached: bool
     expanded_query: str
+    verification_warning: Optional[str] = None
 
 
 @dataclass
@@ -157,6 +159,17 @@ class RAGEngine:
 
         # Cost tracking -------------------------------------------------
         self.cost_tracker = CostTracker(config=self.config)
+
+        # Answer verifier (embedding + LLM grounding check) ------------
+        self.verifier = AnswerVerifier(
+            embed_model=self.embed_model,
+            llm=self.llm,
+            grounded_threshold=self.config.verification.grounded_threshold,
+            borderline_threshold=self.config.verification.borderline_threshold,
+            borderline_penalty=self.config.verification.borderline_confidence_penalty,
+            ungrounded_penalty=self.config.verification.ungrounded_confidence_penalty,
+            enabled=self.config.verification.enabled,
+        )
 
         # Documents & indexes -------------------------------------------
         self.documents = load_documents(self.config)
@@ -248,15 +261,25 @@ class RAGEngine:
 
         # -- Execute query (non-streaming via sync engine) --------------
         try:
+            source_nodes = []
             if len(sub_queries) > 1:
                 # Iterative sub-query retrieval + merge
                 answer, sources, confidence, label, explanation = (
                     self._execute_decomposed_query(sub_queries)
                 )
             else:
-                answer, sources, confidence, label, explanation = (
+                answer, sources, confidence, label, explanation, source_nodes = (
                     self._execute_single_query(expanded_query)
                 )
+
+            # -- Answer verification ------------------------------------
+            verification_warning = None
+            if source_nodes:
+                vr = self.verifier.verify(answer, source_nodes, question)
+                if vr.confidence_penalty > 0:
+                    confidence = max(0.0, confidence - vr.confidence_penalty)
+                    label, _ = self._confidence_label(confidence)
+                verification_warning = vr.warning
 
             query_time = time.time() - start_time
 
@@ -283,6 +306,7 @@ class RAGEngine:
                 query_time=query_time,
                 cached=False,
                 expanded_query=expanded_query,
+                verification_warning=verification_warning,
             )
         except Exception as e:
             query_time = time.time() - start_time
@@ -292,13 +316,24 @@ class RAGEngine:
 
     # ---- internal query helpers ----------------------------------------
 
+    @staticmethod
+    def _confidence_label(confidence: float) -> tuple[str, str]:
+        """Return (label, explanation) for a confidence score."""
+        if confidence >= 0.80:
+            return "HIGH", "Strong retrieval support"
+        elif confidence >= 0.50:
+            return "MEDIUM", "Moderate retrieval support"
+        else:
+            return "LOW", "Weak retrieval support"
+
     def _execute_single_query(
         self, query: str
-    ) -> tuple[str, list[dict], float, str, str]:
+    ) -> tuple[str, list[dict], float, str, str, list]:
         """Execute a single query against the sync engine.
 
         Returns:
-            Tuple of (answer, sources, confidence, label, explanation).
+            Tuple of (answer, sources, confidence, label, explanation,
+            source_nodes).
         """
         response = self.query_engine_sync.query(query)
         answer = str(response)
@@ -315,7 +350,7 @@ class RAGEngine:
                 "score": node.score if hasattr(node, "score") else None,
             })
 
-        return answer, sources, confidence, label, explanation
+        return answer, sources, confidence, label, explanation, response.source_nodes
 
     def _execute_decomposed_query(
         self, sub_queries: list[str]
@@ -336,7 +371,7 @@ class RAGEngine:
 
         for i, sq in enumerate(sub_queries):
             logger.info("Sub-query %d/%d: %s", i + 1, len(sub_queries), sq[:80])
-            answer, sources, conf, _, _ = self._execute_single_query(sq)
+            answer, sources, conf, _, _, _ = self._execute_single_query(sq)
             sub_answers.append(answer)
             all_confidences.append(conf)
 
@@ -509,6 +544,17 @@ class RAGEngine:
             if use_cache and self.config.cache.enabled:
                 self.cache.set(question, full_text, response.source_nodes)
 
+            # Answer verification
+            verification_warning = None
+            if response.source_nodes:
+                vr = self.verifier.verify(
+                    full_text, response.source_nodes, question
+                )
+                if vr.confidence_penalty > 0:
+                    confidence = max(0.0, confidence - vr.confidence_penalty)
+                    label, _ = self._confidence_label(confidence)
+                verification_warning = vr.warning
+
             return QueryResult(
                 answer=full_text,
                 sources=sources,
@@ -518,6 +564,7 @@ class RAGEngine:
                 query_time=query_time,
                 cached=False,
                 expanded_query=expanded_query,
+                verification_warning=verification_warning,
             )
 
         return token_generator(), get_metadata
