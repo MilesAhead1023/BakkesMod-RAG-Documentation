@@ -42,14 +42,21 @@ class GUILogHandler(logging.Handler):
         super().__init__()
         self._buffer: deque = deque(maxlen=max_entries)
         self._lock = threading.Lock()
+        self._version = 0  # incremented on each new log line
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
             with self._lock:
                 self._buffer.append(msg)
+                self._version += 1
         except Exception:
             pass
+
+    @property
+    def version(self) -> int:
+        with self._lock:
+            return self._version
 
     def get_logs(self, min_level: str = "DEBUG") -> str:
         """Return buffered logs filtered by minimum level."""
@@ -74,6 +81,48 @@ class GUILogHandler(logging.Handler):
     def clear(self) -> None:
         with self._lock:
             self._buffer.clear()
+            self._version = 0
+
+
+# ---------------------------------------------------------------------------
+# Stdout/stderr capture — routes print() output into the log handler too
+# ---------------------------------------------------------------------------
+
+import io
+
+class _TeeWriter(io.TextIOBase):
+    """Writes to the original stream AND appends to the GUI log buffer."""
+
+    def __init__(self, original, handler: GUILogHandler, prefix: str = ""):
+        self._original = original
+        self._handler = handler
+        self._prefix = prefix
+
+    def write(self, s: str):
+        if s and s.strip():
+            with self._handler._lock:
+                for line in s.rstrip("\n").split("\n"):
+                    self._handler._buffer.append(
+                        f"{datetime.now().strftime('%H:%M:%S')}  "
+                        f"{self._prefix}{line}"
+                    )
+                    self._handler._version += 1
+        if self._original and not self._original.closed:
+            try:
+                return self._original.write(s)
+            except Exception:
+                return len(s) if s else 0
+        return len(s) if s else 0
+
+    def flush(self):
+        if self._original and not self._original.closed:
+            try:
+                self._original.flush()
+            except Exception:
+                pass
+
+    def isatty(self):
+        return False
 
 
 # Install the handler on the root bakkesmod_rag logger
@@ -86,6 +135,7 @@ _gui_log_handler.setFormatter(
 _root_logger = logging.getLogger("bakkesmod_rag")
 _root_logger.setLevel(logging.DEBUG)
 _root_logger.addHandler(_gui_log_handler)
+_root_logger.propagate = False  # prevent duplicate logs reaching root logger
 
 
 # ---------------------------------------------------------------------------
@@ -129,10 +179,9 @@ def _detect_provider_name(llm) -> str:
 def initialize():
     """Build the RAG engine.  Called once at startup."""
     global engine, _active_provider
+    import nest_asyncio
+    nest_asyncio.apply()
     from bakkesmod_rag import RAGEngine
-    from bakkesmod_rag.setup_keys import ensure_api_keys
-
-    ensure_api_keys()
 
     try:
         engine = RAGEngine()
@@ -660,6 +709,26 @@ def clear_debug_logs() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Live Console — auto-refreshing log viewer
+# ---------------------------------------------------------------------------
+
+_last_console_version = 0
+
+
+def get_live_console() -> str:
+    """Return the full log buffer as a live console view."""
+    global _last_console_version
+    _last_console_version = _gui_log_handler.version
+    logs = _gui_log_handler.get_logs(min_level="DEBUG")
+    line_count = len(_gui_log_handler._buffer)
+    return (
+        f"**Live Console** — {line_count} lines  |  "
+        f"Auto-refreshes every 2s\n\n"
+        f"```\n{logs}\n```"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Gradio layout
 # ---------------------------------------------------------------------------
 
@@ -703,7 +772,8 @@ _CUSTOM_CSS = """
     border-bottom: 3px solid #1a6fff !important;
     color: #1a6fff !important;
 }
-.debug-panel pre { font-size: 0.8em; line-height: 1.4; max-height: 400px; overflow-y: auto; }
+.debug-panel pre { font-size: 0.8em; line-height: 1.4; max-height: 600px; overflow-y: auto; }
+.debug-panel { font-family: 'Cascadia Code', 'Consolas', monospace !important; }
 footer { display: none !important; }
 """
 
@@ -716,9 +786,10 @@ def create_gui():
 
     with gr.Blocks(
         title="BakkesMod RAG System",
-        theme=_RL_THEME,
-        css=_CUSTOM_CSS,
     ) as demo:
+
+        # Auto-refresh timer for live console (2 second interval)
+        console_timer = gr.Timer(2, active=True)
 
         # ---- Header ---------------------------------------------------
         gr.Markdown(
@@ -728,6 +799,34 @@ def create_gui():
         status_bar = gr.Markdown(value=init_status)
 
         with gr.Tabs():
+
+            # ============================================================
+            # Tab 0: Live Console (auto-refreshing)
+            # ============================================================
+            with gr.Tab("🖥️ Live Console", id="console_tab"):
+                gr.Markdown(
+                    "Real-time system output. Auto-refreshes every 2 seconds."
+                )
+                with gr.Row():
+                    console_clear_btn = gr.Button(
+                        "🗑️ Clear", variant="secondary", scale=1,
+                    )
+                console_output = gr.Markdown(
+                    value=get_live_console(),
+                    elem_classes=["debug-panel"],
+                )
+                # Wire the auto-refresh timer
+                console_timer.tick(
+                    fn=get_live_console,
+                    outputs=console_output,
+                )
+                console_clear_btn.click(
+                    fn=lambda: (
+                        _gui_log_handler.clear(),
+                        get_live_console(),
+                    )[-1],
+                    outputs=console_output,
+                )
 
             # ============================================================
             # Tab 1: Query Documentation
@@ -1023,9 +1122,11 @@ def main():
 
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7860,
+        server_port=int(os.environ.get("GRADIO_SERVER_PORT", 7860)),
         share=False,
         show_error=True,
+        theme=_RL_THEME,
+        css=_CUSTOM_CSS,
     )
 
 

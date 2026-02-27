@@ -247,6 +247,78 @@ class CostTracker:
 
 
 # ---------------------------------------------------------------------------
+# Redis-backed cost tracker (multi-process safe)
+# ---------------------------------------------------------------------------
+
+class RedisCostTracker(CostTracker):
+    """CostTracker with Redis-backed atomic token counters.
+
+    Inherits all CostTracker methods but uses Redis INCR for cost
+    accumulation — making it safe to use from multiple worker processes.
+
+    Falls back to in-memory/file counters if Redis is unavailable.
+    """
+
+    def __init__(
+        self,
+        config=None,
+        redis_url: str = "redis://localhost:6379",
+        persistence_path: Optional[Path] = None,
+    ):
+        super().__init__(config=config, persistence_path=persistence_path)
+        self._redis = None
+
+        try:
+            import redis as _redis
+            client = _redis.from_url(redis_url, socket_connect_timeout=2)
+            client.ping()
+            self._redis = client
+            import logging as _logging
+            _logging.getLogger("bakkesmod_rag.cost_tracker").info(
+                "RedisCostTracker connected: %s", redis_url
+            )
+        except Exception as e:
+            import logging as _logging
+            _logging.getLogger("bakkesmod_rag.cost_tracker").warning(
+                "RedisCostTracker falling back to in-memory: %s", e
+            )
+
+    def _record_cost(self, cost: float, provider: str, operation: str, model: str):
+        """Record cost atomically in Redis, falling back to in-memory."""
+        if self._redis is not None:
+            try:
+                today = datetime.now().strftime("%Y-%m-%d")
+                # Store costs as integer microdollars for atomic INCR
+                microdollars = int(cost * 1_000_000)
+                self._redis.incrby("rag:cost:total", microdollars)
+                self._redis.incrby(f"rag:cost:date:{today}", microdollars)
+                self._redis.incrby(f"rag:cost:provider:{provider}", microdollars)
+                self._redis.incrby(
+                    f"rag:cost:op:{provider}:{operation}:{model}", microdollars
+                )
+                return
+            except Exception as e:
+                import logging as _logging
+                _logging.getLogger("bakkesmod_rag.cost_tracker").warning(
+                    "Redis cost record failed, using in-memory: %s", e
+                )
+
+        # Fall back to in-memory
+        super()._record_cost(cost, provider, operation, model)
+
+    def get_daily_cost(self, date: Optional[str] = None) -> float:
+        """Get daily cost from Redis (converted from microdollars)."""
+        if self._redis is None:
+            return super().get_daily_cost(date)
+        date = date or datetime.now().strftime("%Y-%m-%d")
+        try:
+            raw = self._redis.get(f"rag:cost:date:{date}")
+            return int(raw or 0) / 1_000_000
+        except Exception:
+            return super().get_daily_cost(date)
+
+
+# ---------------------------------------------------------------------------
 # Singleton accessor
 # ---------------------------------------------------------------------------
 

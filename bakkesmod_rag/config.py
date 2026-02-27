@@ -34,11 +34,11 @@ class EmbeddingConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     """Configuration for LLM providers."""
-    primary_provider: Literal["openai", "anthropic", "gemini", "openrouter"] = "anthropic"
-    primary_model: str = "claude-sonnet-4-5"
+    primary_provider: Literal["openai", "anthropic", "gemini", "openrouter"] = "gemini"
+    primary_model: str = "gemini-2.5-flash"
 
     fallback_providers: list[Literal["openai", "anthropic", "gemini", "openrouter"]] = [
-        "openrouter", "gemini", "openai"
+        "openai", "openrouter", "anthropic"
     ]
     fallback_models: dict[str, str] = {
         "openrouter": "deepseek/deepseek-chat-v3-0324",
@@ -87,6 +87,18 @@ class RetrieverConfig(BaseModel):
     top_k_escalation: list[int] = [5, 8, 12]
     kg_top_k_escalation: list[int] = [3, 5, 8]
 
+    # Hierarchical chunking (parent-child merge)
+    use_hierarchical_chunking: bool = True
+    merge_threshold: float = 0.5
+
+    # MMR diversity reranking
+    use_mmr: bool = True
+    mmr_threshold: float = 0.7
+
+    # ColBERT multi-vector retrieval
+    use_colbert: bool = False
+    colbert_model: str = "colbert-ir/colbertv2.0"
+
 
 class ChunkingConfig(BaseModel):
     """Configuration for document chunking."""
@@ -107,6 +119,9 @@ class CacheConfig(BaseModel):
     similarity_threshold: float = 0.92
     ttl_seconds: int = 86400 * 7  # 7 days
     cache_dir: str = ".cache/semantic"
+    backend: str = "file"  # "file" | "redis"
+    redis_url: str = "redis://localhost:6379"
+    redis_db: int = 0
 
 
 class ObservabilityConfig(BaseModel):
@@ -119,6 +134,10 @@ class ObservabilityConfig(BaseModel):
     prometheus_port: int = 8000
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: str = "json"
+    # OpenTelemetry
+    enable_otel: bool = False
+    otel_endpoint: str = "http://localhost:4317"
+    otel_service_name: str = "bakkesmod-rag"
 
 
 class CostConfig(BaseModel):
@@ -210,6 +229,19 @@ class SelfRAGConfig(BaseModel):
     force_llm_rewrite_on_retry: bool = True
 
 
+class IntentRouterConfig(BaseModel):
+    """Configuration for intent routing."""
+    enabled: bool = True
+    llm_confirmation_threshold: float = 0.6
+
+
+class GuardrailConfig(BaseModel):
+    """Configuration for input guardrails."""
+    enabled: bool = True
+    min_length: int = 3
+    max_length: int = 1000
+
+
 class RAGConfig(BaseModel):
     """Complete RAG system configuration."""
 
@@ -234,6 +266,8 @@ class RAGConfig(BaseModel):
     cpp_intelligence: CppIntelligenceConfig = Field(default_factory=CppIntelligenceConfig)
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
     self_rag: SelfRAGConfig = Field(default_factory=SelfRAGConfig)
+    intent_router: IntentRouterConfig = Field(default_factory=IntentRouterConfig)
+    guardrails: GuardrailConfig = Field(default_factory=GuardrailConfig)
 
 
 # Singleton

@@ -72,8 +72,9 @@ async def main():
             types.Tool(
                 name="query_bakkesmod_sdk",
                 description=(
-                    "Query BakkesMod SDK documentation using RAG. "
-                    "Returns an answer with confidence score and source files."
+                    "Retrieve relevant BakkesMod SDK documentation chunks using RAG. "
+                    "Returns raw context chunks with confidence scores - you (Claude) "
+                    "generate the answer from the retrieved context. No LLM API cost."
                 ),
                 inputSchema={
                     "type": "object",
@@ -126,19 +127,26 @@ async def main():
                     text="Error: 'query' parameter is required.",
                 )]
 
-            result = await loop.run_in_executor(None, engine.query, query)
+            # Retrieve context chunks only (no LLM answer generation)
+            result = await loop.run_in_executor(None, engine.retrieve_context, query)
 
-            response = result.answer
-            response += f"\n\nConfidence: {result.confidence:.0%} ({result.confidence_label})"
-            if result.sources:
-                response += "\n\nSources:\n"
-                for src in result.sources:
-                    score_str = (
-                        f" (score: {src['score']:.3f})"
-                        if src.get("score") is not None
-                        else ""
-                    )
-                    response += f"- {src['file_name']}{score_str}\n"
+            # Format response with chunks and metadata
+            response = f"**Query:** {query}\n"
+            if result["expanded_query"] != query:
+                response += f"**Expanded Query:** {result['expanded_query']}\n"
+            response += f"**Confidence:** {result['confidence']:.0%} ({result['confidence_label']})\n"
+            response += f"**Retrieval Time:** {result['query_time']:.2f}s\n\n"
+            
+            response += f"**Retrieved {len(result['chunks'])} Chunks:**\n\n"
+            for i, chunk in enumerate(result['chunks'], 1):
+                score_str = f" (score: {chunk['score']:.3f})" if chunk['score'] is not None else ""
+                response += f"### Chunk {i} - {chunk['file_name']}{score_str}\n"
+                response += f"```\n{chunk['text']}\n```\n\n"
+            
+            response += "**Sources:**\n"
+            for src in result['sources']:
+                score_str = f" (score: {src['score']:.3f})" if src.get('score') is not None else ""
+                response += f"- {src['file_name']}{score_str}\n"
 
             return [types.TextContent(type="text", text=response)]
 

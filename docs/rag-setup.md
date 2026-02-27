@@ -9,12 +9,16 @@ This directory contains a Python-based RAG (Retrieval-Augmented Generation) syst
 ## Architecture
 
 ```
-rag_builder.py          - Local embeddings (HuggingFace, no API costs)
-comprehensive_rag.py    - OpenAI embeddings + OpenAI reranking
-gemini_rag_builder.py   - Gemini knowledge graph + Claude reranking
-mcp_rag_server.py       - MCP server for Claude Code integration
-rag_sentinel.py         - Health checks and diagnostics
-evaluator.py            - RAG quality evaluation
+bakkesmod_rag/
+  engine.py              # RAGEngine: central orchestrator
+  config.py              # Pydantic config (loads .env automatically)
+  llm_provider.py        # LLM fallback chain with live verification
+  retrieval.py           # 3-way fusion: Vector + BM25 + Knowledge Graph
+  document_loader.py     # Loads .md, .h, .cpp from docs + templates
+  sentinel.py            # Health checks and diagnostics
+  evaluator.py           # RAG quality evaluation
+  mcp_server.py          # MCP server for Claude Code integration
+  comprehensive_builder.py  # Full index builder with KG checkpoints
 ```
 
 ## Prerequisites
@@ -55,7 +59,7 @@ export GOOGLE_API_KEY="..."
 export RAG_STORAGE_DIR="./custom_storage"
 ```
 
-**Note:** All three API keys (OpenAI, Anthropic, and Google) are required by `rag_sentinel.py` and integration tests. Individual scripts may work with a subset, but for complete functionality, configure all three keys.
+**Note:** All three API keys (OpenAI, Anthropic, and Google) are required by `python -m bakkesmod_rag.sentinel` and integration tests. Individual scripts may work with a subset, but for complete functionality, configure all three keys.
 
 ### 3. Prepare Documentation
 
@@ -73,42 +77,28 @@ find docs -name "*.md"
 
 ## Usage
 
-### Option 1: Local Embeddings (No API costs)
+### Option 1: Build Indices
 
 ```bash
-python rag_builder.py
+python -m bakkesmod_rag.comprehensive_builder
 ```
 
-Uses HuggingFace embeddings (BAAI/bge-small-en-v1.5) locally. No API calls.
+Builds vector index and optionally knowledge graph. Uses OpenAI `text-embedding-3-small` for embeddings, with configurable LLM for KG extraction.
 
-### Option 2: OpenAI Stack (High quality)
+### Option 2: Interactive CLI
 
 ```bash
-python comprehensive_rag.py
+python interactive_rag.py
 ```
 
-Uses:
-- OpenAI `text-embedding-3-large` for embeddings
-- GPT-4o-mini for knowledge graph extraction
-- GPT-4o-mini for reranking (fast and cost-effective)
-
-### Option 3: Gemini Stack (Fast knowledge graphs)
-
-```bash
-python gemini_rag_builder.py
-```
-
-Uses:
-- OpenAI embeddings
-- Gemini 2.0 Flash for knowledge graph extraction (faster/cheaper than GPT)
-- Claude 3.5 Sonnet for reranking
+Launches the interactive query interface. Will build indices on first run if `rag_storage/` doesn't exist.
 
 ## Health Checks
 
 Before building indices, verify API connectivity:
 
 ```bash
-python rag_sentinel.py
+python -m bakkesmod_rag.sentinel
 ```
 
 This checks:
@@ -129,7 +119,7 @@ python -m pytest test_rag_integration.py -v
 Start the MCP server for Claude Code integration:
 
 ```bash
-python mcp_rag_server.py
+python -m bakkesmod_rag.mcp_server
 ```
 
 This enables the `query_bakkesmod_sdk` tool in Claude Code sessions.
@@ -178,13 +168,13 @@ Delete and rebuild:
 **Windows:**
 ```cmd
 rmdir /s /q rag_storage
-python comprehensive_rag.py
+python -m bakkesmod_rag.comprehensive_builder
 ```
 
 **Linux/Mac:**
 ```bash
 rm -rf rag_storage/
-python comprehensive_rag.py
+python -m bakkesmod_rag.comprehensive_builder
 ```
 
 ## Performance Notes

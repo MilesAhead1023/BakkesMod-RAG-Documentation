@@ -50,6 +50,7 @@ hiddenimports += collect_submodules('anthropic')
 hiddenimports += collect_submodules('openai')
 hiddenimports += collect_submodules('google')
 hiddenimports += ['google.genai']
+hiddenimports += ['llama_index.llms.google_genai']
 
 # Utilities
 hiddenimports += collect_submodules('pygments')
@@ -60,6 +61,8 @@ hiddenimports += ['tiktoken_ext.openai_public', 'tiktoken_ext']
 hiddenimports += ['pydantic', 'pydantic.dataclasses']
 hiddenimports += ['dotenv']
 hiddenimports += ['nest_asyncio']
+hiddenimports += ['flashrank']
+hiddenimports += ['bm25s']
 
 # Unified bakkesmod_rag package
 hiddenimports += collect_submodules('bakkesmod_rag')
@@ -73,10 +76,18 @@ hiddenimports += [
     'bakkesmod_rag.query_rewriter',
     'bakkesmod_rag.confidence',
     'bakkesmod_rag.code_generator',
+    'bakkesmod_rag.compiler',
     'bakkesmod_rag.engine',
     'bakkesmod_rag.cost_tracker',
     'bakkesmod_rag.observability',
     'bakkesmod_rag.resilience',
+    'bakkesmod_rag.answer_verifier',
+    'bakkesmod_rag.query_decomposer',
+    'bakkesmod_rag.cpp_analyzer',
+    'bakkesmod_rag.feedback_store',
+    'bakkesmod_rag.setup_keys',
+    'bakkesmod_rag.sentinel',
+    'bakkesmod_rag.evaluator',
 ]
 
 a = Analysis(

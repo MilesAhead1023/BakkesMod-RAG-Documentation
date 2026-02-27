@@ -1,12 +1,18 @@
 """
 Observability & Monitoring
 ===========================
-Structured logging with optional Phoenix/Prometheus integration.
+Structured logging with optional Phoenix/Prometheus integration,
+and optional OpenTelemetry (OTel) tracing for Jaeger, Grafana Tempo,
+Datadog, or any OTel-compatible backend.
+
+OTel is fully optional: if opentelemetry-api is not installed, OTelTracer
+is a no-op stub — no errors, no warnings, just silent pass-through.
 """
 
 import logging
 import json
 import sys
+from contextlib import contextmanager
 from typing import Optional, Dict
 from datetime import datetime
 
@@ -311,3 +317,154 @@ def initialize_observability(config=None):
         Tuple of ``(StructuredLogger, PhoenixObserver, MetricsCollector)``.
     """
     return get_logger(config), get_phoenix(config), get_metrics(config)
+
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry integration
+# ---------------------------------------------------------------------------
+
+class _NoOpSpan:
+    """No-op span used when OTel is unavailable or disabled."""
+
+    def set_attribute(self, key: str, value) -> None:
+        pass
+
+    def record_exception(self, exc: Exception) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+class OTelTracer:
+    """Optional OpenTelemetry tracer for the RAG pipeline.
+
+    Instruments query, retrieval, LLM call, and cache spans.
+    When opentelemetry-api is not installed, all methods become no-ops —
+    no errors, no warnings, zero overhead.
+
+    Usage::
+
+        tracer = OTelTracer(config)
+        with tracer.span("rag.query") as span:
+            span.set_attribute("query_text", query)
+            ...
+    """
+
+    def __init__(self, config=None):
+        """Initialise the OTel tracer.
+
+        Args:
+            config: ObservabilityConfig with enable_otel, otel_endpoint,
+                otel_service_name fields.
+        """
+        self._enabled = False
+        self._tracer = None
+
+        if config is None or not getattr(config, "enable_otel", False):
+            return
+
+        self.configure(
+            endpoint=getattr(config, "otel_endpoint", "http://localhost:4317"),
+            service_name=getattr(config, "otel_service_name", "bakkesmod-rag"),
+        )
+
+    def configure(self, endpoint: str, service_name: str) -> None:
+        """Configure the OTel tracer with an exporter endpoint.
+
+        Silently skips if opentelemetry-api is not installed.
+
+        Args:
+            endpoint: OTel collector gRPC endpoint (e.g. http://localhost:4317).
+            service_name: Service name tag for all spans.
+        """
+        try:
+            from opentelemetry import trace
+            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.resources import Resource
+
+            resource = Resource.create({"service.name": service_name})
+            provider = TracerProvider(resource=resource)
+
+            # Try to configure OTLP gRPC exporter
+            try:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+                from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+                exporter = OTLPSpanExporter(endpoint=endpoint)
+                provider.add_span_processor(BatchSpanProcessor(exporter))
+            except ImportError:
+                # opentelemetry-exporter-otlp not installed — tracer still works,
+                # just no export
+                pass
+
+            trace.set_tracer_provider(provider)
+            self._tracer = trace.get_tracer(service_name)
+            self._enabled = True
+            logging.getLogger("bakkesmod_rag.observability").info(
+                "OTel tracer configured: endpoint=%s service=%s",
+                endpoint, service_name,
+            )
+
+        except ImportError:
+            # opentelemetry-api not installed — silently become a no-op
+            pass
+        except Exception as e:
+            logging.getLogger("bakkesmod_rag.observability").warning(
+                "OTel tracer setup failed (continuing without tracing): %s", e
+            )
+
+    @property
+    def enabled(self) -> bool:
+        """True if OTel tracing is active."""
+        return self._enabled
+
+    @contextmanager
+    def span(self, name: str, attributes: Optional[Dict] = None):
+        """Context manager that creates an OTel span (or no-op if disabled).
+
+        Args:
+            name: Span name (e.g. "rag.query", "rag.retrieval").
+            attributes: Initial span attributes dict.
+
+        Yields:
+            An OTel Span or a _NoOpSpan.
+        """
+        if not self._enabled or self._tracer is None:
+            noop = _NoOpSpan()
+            yield noop
+            return
+
+        with self._tracer.start_as_current_span(name) as otel_span:
+            if attributes:
+                for k, v in attributes.items():
+                    try:
+                        otel_span.set_attribute(k, v)
+                    except Exception:
+                        pass
+            yield otel_span
+
+
+# ---------------------------------------------------------------------------
+# OTelTracer singleton
+# ---------------------------------------------------------------------------
+
+_otel_tracer_instance: Optional[OTelTracer] = None
+
+
+def get_otel_tracer(config=None) -> OTelTracer:
+    """Return the global OTelTracer singleton.
+
+    Args:
+        config: ObservabilityConfig (used only on first call).
+
+    Returns:
+        The shared OTelTracer instance.
+    """
+    global _otel_tracer_instance
+    if _otel_tracer_instance is None:
+        _otel_tracer_instance = OTelTracer(config)
+    return _otel_tracer_instance

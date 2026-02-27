@@ -97,22 +97,20 @@ Shows detailed logging of every step for debugging.
 
 ```
 BakkesMod-RAG-Documentation/
-├── interactive_rag.py          # Interactive query mode
-├── test_comprehensive.py       # Full test suite
-├── test_rag_verbose.py         # Verbose logging test
-├── rag_2026.py                 # Full Gold Standard RAG (with KG)
-├── config.py                   # System configuration
+├── interactive_rag.py          # Interactive query mode (CLI)
+├── rag_gui.py                  # Web-based GUI (Gradio)
+├── bakkesmod_rag/              # Core package (all RAG logic)
 ├── .env                        # Your API keys
 ├── TEST_RESULTS.md             # Detailed test report
 ├── QUICK_START.md              # This file
-└── rag_storage_verbose/        # Cached vector index
+└── rag_storage/                # Cached vector index
 ```
 
 ---
 
 ## 🔧 Configuration
 
-All settings are in `config.py`:
+All settings are in `bakkesmod_rag/config.py`:
 
 ### Change the LLM
 ```python
@@ -129,7 +127,7 @@ rerank_top_n: int = 5       # Final result count
 ```
 
 ### Enable Knowledge Graph
-Edit `rag_2026.py` to use full Gold Standard with KG (slower build, better results)
+Edit `bakkesmod_rag/config.py` and set `enable_kg: bool = True` (slower build, better results)
 
 ---
 
@@ -178,7 +176,7 @@ Already fixed! All emojis replaced with `[OK]`, `[WARNING]`, etc.
 3. ✅ Review `TEST_RESULTS.md` for details
 
 ### Soon
-1. Enable Knowledge Graph (edit `rag_2026.py`)
+1. Enable Knowledge Graph (edit `bakkesmod_rag/config.py`)
 2. Add more documentation files to `docs/`
 3. Configure observability (Phoenix, Prometheus)
 4. Deploy with Docker (`docker-compose up`)

@@ -79,7 +79,7 @@ This project adheres to a Code of Conduct that all contributors are expected to 
        [Environment]::SetEnvironmentVariable($name, $value, 'Process')
    }
 
-   python rag_builder.py
+   python interactive_rag.py
    ```
    
    **Linux/Mac:**
@@ -88,14 +88,14 @@ This project adheres to a Code of Conduct that all contributors are expected to 
    export $(grep -v '^#' .env | xargs)
 
    # now run your script
-   python rag_builder.py
+   python interactive_rag.py
    ```
 
 4. **Build the RAG index** (required for testing):
    The integration tests and sentinel checks expect RAG indices to be available under
-   the `./rag_storage/` directory. Use `comprehensive_rag.py` to build the indices:
+   the `./rag_storage/` directory. Use the comprehensive builder to build the indices:
    ```bash
-   python comprehensive_rag.py  # builds indices in ./rag_storage/
+   python -m bakkesmod_rag.comprehensive_builder  # builds indices in ./rag_storage/
    ```
 
 For more detailed setup instructions, see [docs/rag-setup.md](docs/rag-setup.md).

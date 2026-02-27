@@ -1,9 +1,11 @@
-"""Tests for SemanticCache: get/set/clear/expire/similarity."""
+"""Tests for SemanticCache, RedisSemanticCache, and create_cache factory."""
 
 import json
 import time
 import pytest
-from bakkesmod_rag.cache import SemanticCache
+from unittest.mock import MagicMock, patch
+
+from bakkesmod_rag.cache import SemanticCache, RedisSemanticCache, create_cache
 
 
 @pytest.fixture
@@ -94,3 +96,127 @@ class TestCacheStats:
         stats = cache.stats()
         assert stats["total_entries"] >= 1
         assert stats["valid_entries"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Gap 6: RedisSemanticCache tests
+# ---------------------------------------------------------------------------
+
+class TestRedisSemanticCache:
+    """Tests for Redis-backed cache using fakeredis."""
+
+    @pytest.fixture
+    def redis_cache(self, mock_embed_model):
+        """Create RedisSemanticCache backed by fakeredis."""
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed (pip install fakeredis)")
+
+        server = fakeredis.FakeServer()
+        fake_client = fakeredis.FakeRedis(server=server)
+
+        cache = RedisSemanticCache(
+            redis_url="redis://localhost:6379",  # won't actually connect
+            similarity_threshold=0.90,
+            ttl_seconds=3600,
+            embed_model=mock_embed_model,
+        )
+        # Inject fakeredis client directly
+        cache._redis = fake_client
+        cache._fallback = None
+        return cache
+
+    def test_set_and_get(self, redis_cache):
+        """Set a value and retrieve it by similarity."""
+        redis_cache.set("What is BakkesMod?", "BakkesMod is a mod framework.", [])
+        result = redis_cache.get("What is BakkesMod?")
+        assert result is not None
+        response, sim, meta = result
+        assert "BakkesMod" in response
+        assert sim >= 0.90
+
+    def test_get_miss(self, redis_cache):
+        """Cache miss returns None."""
+        result = redis_cache.get("cooking recipes")
+        assert result is None
+
+    def test_clear(self, redis_cache):
+        """clear() removes all entries."""
+        redis_cache.set("q1", "r1", [])
+        redis_cache.clear()
+        result = redis_cache.get("q1")
+        assert result is None
+
+    def test_stats_returns_dict(self, redis_cache):
+        """stats() returns a dict with expected keys."""
+        stats = redis_cache.stats()
+        assert "backend" in stats
+        assert stats["backend"] == "redis"
+        assert "total_entries" in stats
+        assert "similarity_threshold" in stats
+
+    def test_clear_expired_noop(self, redis_cache):
+        """clear_expired() returns 0 (Redis handles TTL natively)."""
+        result = redis_cache.clear_expired()
+        assert result == 0
+
+    def test_no_embed_model_returns_none(self):
+        """Without embed model, get() returns None."""
+        cache = RedisSemanticCache(embed_model=None)
+        result = cache.get("test")
+        assert result is None
+
+    def test_fallback_to_file_on_connection_refused(self, tmp_cache_dir, mock_embed_model):
+        """Falls back to file cache when Redis connection refused."""
+        cache = RedisSemanticCache(
+            redis_url="redis://localhost:19999",  # nothing listening here
+            similarity_threshold=0.90,
+            ttl_seconds=3600,
+            embed_model=mock_embed_model,
+            cache_dir=str(tmp_cache_dir),
+        )
+        # Should have a file fallback
+        assert cache._fallback is not None
+        assert isinstance(cache._fallback, SemanticCache)
+
+
+# ---------------------------------------------------------------------------
+# Gap 6: create_cache factory
+# ---------------------------------------------------------------------------
+
+class TestCreateCacheFactory:
+    """Tests for the create_cache() factory function."""
+
+    def test_file_backend_returns_semantic_cache(self, tmp_cache_dir, mock_embed_model):
+        """When backend='file', returns SemanticCache."""
+        from bakkesmod_rag.config import CacheConfig
+        config = CacheConfig(
+            backend="file",
+            cache_dir=str(tmp_cache_dir),
+            similarity_threshold=0.90,
+            ttl_seconds=3600,
+        )
+        cache = create_cache(config, mock_embed_model)
+        assert isinstance(cache, SemanticCache)
+
+    def test_redis_backend_returns_redis_cache(self, tmp_cache_dir, mock_embed_model):
+        """When backend='redis', returns RedisSemanticCache (or file fallback)."""
+        from bakkesmod_rag.config import CacheConfig
+        config = CacheConfig(
+            backend="redis",
+            redis_url="redis://localhost:19999",  # will fail, fallback to file
+            cache_dir=str(tmp_cache_dir),
+            similarity_threshold=0.90,
+            ttl_seconds=3600,
+        )
+        cache = create_cache(config, mock_embed_model)
+        # Should return RedisSemanticCache (with file fallback inside)
+        assert isinstance(cache, RedisSemanticCache)
+
+    def test_factory_default_is_file(self, tmp_cache_dir, mock_embed_model):
+        """Default backend (no backend field set) returns SemanticCache."""
+        from bakkesmod_rag.config import CacheConfig
+        config = CacheConfig(cache_dir=str(tmp_cache_dir))
+        cache = create_cache(config, mock_embed_model)
+        assert isinstance(cache, SemanticCache)

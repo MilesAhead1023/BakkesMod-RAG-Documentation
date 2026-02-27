@@ -118,7 +118,10 @@ def create_fusion_retriever(
     nodes: List[BaseNode],
     config: Optional[RAGConfig] = None,
 ) -> QueryFusionRetriever:
-    """Create a fusion retriever combining Vector + BM25 + optional KG.
+    """Create a fusion retriever combining Vector + BM25 + optional KG + optional ColBERT.
+
+    When use_hierarchical_chunking=True, wraps the vector retriever with
+    AutoMergingRetriever so that child chunk hits can merge up to parent nodes.
 
     Args:
         indexes: Dict from build_or_load_indexes().
@@ -135,6 +138,13 @@ def create_fusion_retriever(
     vector_retriever = indexes["vector"].as_retriever(
         similarity_top_k=config.retriever.vector_top_k
     )
+
+    # Wrap with AutoMergingRetriever for hierarchical chunking
+    if config.retriever.use_hierarchical_chunking:
+        vector_retriever = _wrap_auto_merging(
+            vector_retriever, indexes["vector"].storage_context, config
+        )
+
     bm25_retriever = BM25Retriever.from_defaults(
         nodes=nodes, similarity_top_k=config.retriever.bm25_top_k
     )
@@ -150,6 +160,11 @@ def create_fusion_retriever(
     else:
         mode_label = "2-way fusion (Vector+BM25)"
 
+    # Optional ColBERT 4th retriever
+    if config.retriever.use_colbert and "colbert" in indexes:
+        retrievers.append(indexes["colbert"])
+        mode_label = mode_label.replace(")", "+ColBERT)")
+
     fusion_retriever = QueryFusionRetriever(
         retrievers,
         num_queries=config.retriever.fusion_num_queries,
@@ -160,6 +175,39 @@ def create_fusion_retriever(
     print(f"[RETRIEVAL] {mode_label} with {config.retriever.fusion_num_queries} query variants")
     logger.info("%s with %d query variants", mode_label, config.retriever.fusion_num_queries)
     return fusion_retriever
+
+
+def _wrap_auto_merging(
+    retriever: BaseRetriever,
+    storage_context,
+    config: RAGConfig,
+) -> BaseRetriever:
+    """Wrap a retriever with AutoMergingRetriever for parent-child merging.
+
+    When >merge_threshold of a parent's children are retrieved, replaces
+    them with the parent node for more complete context.
+
+    Falls back to the original retriever if AutoMergingRetriever is unavailable.
+    """
+    try:
+        from llama_index.core.retrievers import AutoMergingRetriever
+
+        merged = AutoMergingRetriever(
+            retriever,
+            storage_context,
+            simple_ratio_thresh=config.retriever.merge_threshold,
+            verbose=False,
+        )
+        logger.info(
+            "AutoMergingRetriever enabled (merge_threshold=%.2f)",
+            config.retriever.merge_threshold,
+        )
+        return merged
+    except (ImportError, Exception) as e:
+        logger.warning(
+            "AutoMergingRetriever unavailable (%s), using flat retriever", e
+        )
+        return retriever
 
 
 def create_query_engine(
@@ -188,6 +236,12 @@ def create_query_engine(
         reranker = _get_reranker(config)
         if reranker is not None:
             node_postprocessors.append(reranker)
+
+    # MMR diversity reranking (applied after neural reranker)
+    if config.retriever.use_mmr:
+        mmr_processor = _get_mmr_postprocessor(config)
+        if mmr_processor is not None:
+            node_postprocessors.append(mmr_processor)
 
     query_engine = RetrieverQueryEngine.from_args(
         fusion_retriever,
@@ -261,6 +315,165 @@ def _get_reranker(config: RAGConfig):
     return None
 
 
+def _get_mmr_postprocessor(config: RAGConfig):
+    """Create an MMR node postprocessor for diversity-aware reranking.
+
+    Maximal Marginal Relevance (MMR) reduces near-duplicate chunks from
+    the same source by penalising nodes too similar to already-selected ones.
+
+    Falls back gracefully if not available.
+
+    Returns:
+        MMR postprocessor instance, or None if unavailable.
+    """
+    try:
+        # Try LlamaIndex built-in MMR postprocessor
+        from llama_index.core.postprocessor import MMRNodePostprocessor
+
+        mmr = MMRNodePostprocessor(
+            similarity_cutoff=config.retriever.mmr_threshold,
+        )
+        logger.info(
+            "MMR postprocessor enabled (threshold=%.2f)", config.retriever.mmr_threshold
+        )
+        print(f"[RETRIEVAL] MMR diversity reranking enabled (threshold={config.retriever.mmr_threshold})")
+        return mmr
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: custom MMR implementation
+    try:
+        return _CustomMMRPostprocessor(
+            similarity_cutoff=config.retriever.mmr_threshold,
+        )
+    except Exception as e:
+        logger.warning("MMR postprocessor unavailable: %s", e)
+        return None
+
+
+class _CustomMMRPostprocessor:
+    """Minimal MMR postprocessor for when LlamaIndex's is unavailable.
+
+    Implements greedy MMR: select nodes that are relevant to the query
+    but dissimilar from already-selected nodes.
+    """
+
+    def __init__(self, similarity_cutoff: float = 0.7):
+        self.similarity_cutoff = similarity_cutoff
+
+    def _cosine_similarity(self, v1, v2) -> float:
+        if not v1 or not v2:
+            return 0.0
+        dot = sum(a * b for a, b in zip(v1, v2))
+        m1 = sum(a * a for a in v1) ** 0.5
+        m2 = sum(b * b for b in v2) ** 0.5
+        if m1 == 0 or m2 == 0:
+            return 0.0
+        return dot / (m1 * m2)
+
+    def postprocess_nodes(self, nodes, query_bundle=None):
+        """Filter out near-duplicate nodes above the similarity cutoff."""
+        selected = []
+        selected_embeddings = []
+
+        for node_with_score in nodes:
+            node = node_with_score.node
+            emb = getattr(node, "embedding", None)
+
+            if emb is None:
+                # No embedding: always include
+                selected.append(node_with_score)
+                selected_embeddings.append(None)
+                continue
+
+            # Check similarity against already-selected nodes
+            too_similar = False
+            for sel_emb in selected_embeddings:
+                if sel_emb is not None:
+                    sim = self._cosine_similarity(emb, sel_emb)
+                    if sim > self.similarity_cutoff:
+                        too_similar = True
+                        break
+
+            if not too_similar:
+                selected.append(node_with_score)
+                selected_embeddings.append(emb)
+
+        logger.info(
+            "MMR: %d nodes -> %d after diversity filtering (cutoff=%.2f)",
+            len(nodes), len(selected), self.similarity_cutoff,
+        )
+        return selected
+
+
+def build_colbert_retriever(
+    documents: list,
+    config: RAGConfig,
+    storage_dir: str,
+):
+    """Build a ColBERT late-interaction retriever (optional).
+
+    Uses ragatouille library with colbertv2.0 model for fine-grained
+    token-level query-document matching. Falls back to None if ragatouille
+    is not installed.
+
+    Args:
+        documents: List of Document objects to index.
+        config: RAGConfig instance.
+        storage_dir: Directory to persist ColBERT index.
+
+    Returns:
+        A LlamaIndex-compatible retriever, or None if unavailable.
+    """
+    if not config.retriever.use_colbert:
+        return None
+
+    try:
+        from ragatouille import RAGPretrainedModel
+
+        colbert_dir = str(Path(storage_dir) / "colbert")
+        texts = [d.text for d in documents if d.text.strip()]
+        ids = [
+            d.metadata.get("file_path", f"doc_{i}")
+            for i, d in enumerate(documents)
+            if d.text.strip()
+        ]
+
+        model = RAGPretrainedModel.from_pretrained(config.retriever.colbert_model)
+        model.index(
+            collection=texts,
+            document_ids=ids,
+            index_name="bakkesmod",
+            overwrite_index=True,
+        )
+
+        class _ColBERTRetriever:
+            def __init__(self, colbert_model, top_k: int):
+                self._model = colbert_model
+                self._top_k = top_k
+
+            def retrieve(self, query: str):
+                results = self._model.search(query, k=self._top_k)
+                from llama_index.core.schema import NodeWithScore, TextNode
+                nodes = []
+                for r in results:
+                    n = TextNode(text=r.get("content", ""), id_=r.get("document_id", ""))
+                    nodes.append(NodeWithScore(node=n, score=r.get("score", 0.0)))
+                return nodes
+
+        retriever = _ColBERTRetriever(model, top_k=config.retriever.vector_top_k)
+        logger.info("ColBERT retriever built: %s", config.retriever.colbert_model)
+        print(f"[RETRIEVAL] ColBERT retriever enabled ({config.retriever.colbert_model})")
+        return retriever
+
+    except ImportError:
+        logger.info("ragatouille not installed, ColBERT retrieval skipped")
+        return None
+    except Exception as e:
+        logger.warning("ColBERT retriever build failed: %s", e)
+        return None
+
+
 def adjust_retriever_top_k(
     fusion_retriever: QueryFusionRetriever,
     attempt: int,
@@ -293,7 +506,7 @@ def adjust_retriever_top_k(
     top_k = escalation[idx]
     kg_top_k = kg_escalation[kg_idx]
 
-    for retriever in fusion_retriever.retrievers:
+    for retriever in fusion_retriever._retrievers:
         class_name = type(retriever).__name__
         if "KnowledgeGraph" in class_name or "KG" in class_name:
             if hasattr(retriever, "_similarity_top_k"):

@@ -28,6 +28,7 @@ from bakkesmod_rag.observability import (
     StructuredLogger,
     PhoenixObserver,
     MetricsCollector,
+    OTelTracer,
 )
 from bakkesmod_rag.resilience import APICallManager
 from bakkesmod_rag.document_loader import load_documents, parse_nodes
@@ -39,6 +40,8 @@ from bakkesmod_rag.retrieval import (
     reset_retriever_top_k,
 )
 from bakkesmod_rag.code_generator import BakkesModCodeGenerator
+from bakkesmod_rag.intent_router import IntentRouter, Intent
+from bakkesmod_rag.guardrails import InputGuardrail
 
 logger = logging.getLogger("bakkesmod_rag.engine")
 
@@ -126,12 +129,17 @@ class RAGEngine:
             config: Optional ``RAGConfig``.  Falls back to the global
                 singleton returned by ``get_config()`` when *None*.
         """
+        # Allow nested event loops (needed for Gemini async internals)
+        import nest_asyncio
+        nest_asyncio.apply()
+
         self.config: RAGConfig = config or get_config()
 
         # Observability -------------------------------------------------
         self.logger = StructuredLogger("rag_engine", self.config.observability)
         self.phoenix = PhoenixObserver(self.config.observability)
         self.metrics = MetricsCollector(self.config.observability)
+        self.otel = OTelTracer(self.config.observability)
 
         # Resilience ----------------------------------------------------
         self.api_manager = APICallManager(self.config.production)
@@ -206,6 +214,15 @@ class RAGEngine:
             config=self.config.codegen,
         )
 
+        # Intent router (rule-based + optional LLM) --------------------
+        self.intent_router = IntentRouter(
+            llm=self.llm,
+            config=self.config.intent_router,
+        )
+
+        # Input guardrails (pre-query validation) ----------------------
+        self.guardrail = InputGuardrail(config=self.config.guardrails)
+
         print(
             f"[ENGINE] Ready! {len(self.documents)} docs, "
             f"{len(self.nodes)} nodes"
@@ -222,6 +239,65 @@ class RAGEngine:
     def num_nodes(self) -> int:
         """Return the number of parsed nodes."""
         return len(self.nodes)
+
+    # ---- retrieval-only (no LLM answer generation) --------------------
+
+    def retrieve_context(self, question: str) -> dict:
+        """Retrieve relevant context chunks without LLM answer generation.
+        
+        Returns raw retrieved chunks for external LLM processing (e.g., by
+        Claude Code via MCP). Only uses API for query embedding, not answer.
+        
+        Args:
+            question: The user's natural-language question.
+            
+        Returns:
+            Dict with:
+                - chunks: List of retrieved text chunks
+                - sources: List of source file metadata
+                - confidence: Retrieval confidence score
+                - confidence_label: Human-readable confidence
+                - expanded_query: Synonym-expanded query
+        """
+        import nest_asyncio
+        nest_asyncio.apply()  # Allow nested event loops
+        
+        start_time = time.time()
+        expanded_query = self.rewriter.rewrite(question)
+        
+        # Use the fusion retriever (now with nest_asyncio enabled)
+        source_nodes = self.fusion_retriever.retrieve(expanded_query)
+        
+        # Calculate confidence from retrieval quality
+        confidence, label, explanation = calculate_confidence(source_nodes)
+        
+        # Extract chunks and metadata
+        chunks = []
+        sources = []
+        for node in source_nodes:
+            chunks.append({
+                "text": node.node.text,
+                "file_name": node.node.metadata.get("file_name", "unknown"),
+                "score": node.score if hasattr(node, "score") else None,
+            })
+            fname = node.node.metadata.get("file_name", "unknown")
+            if not any(s["file_name"] == fname for s in sources):
+                sources.append({
+                    "file_name": fname,
+                    "score": node.score if hasattr(node, "score") else None,
+                })
+        
+        query_time = time.time() - start_time
+        
+        return {
+            "chunks": chunks,
+            "sources": sources,
+            "confidence": confidence,
+            "confidence_label": label,
+            "confidence_explanation": explanation,
+            "expanded_query": expanded_query,
+            "query_time": query_time,
+        }
 
     # ---- non-streaming query -------------------------------------------
 
@@ -240,6 +316,22 @@ class RAGEngine:
         """
         start_time = time.time()
         self.logger.log_query(question)
+
+        # -- Guardrail check --------------------------------------------
+        gr = self.guardrail.check(question)
+        if not gr.passed:
+            query_time = time.time() - start_time
+            return QueryResult(
+                answer=f"Query rejected: {gr.reason}",
+                sources=[],
+                confidence=0.0,
+                confidence_label="REJECTED",
+                confidence_explanation=gr.reason,
+                query_time=query_time,
+                cached=False,
+                expanded_query=question,
+            )
+        question = gr.sanitized_query
 
         expanded_query = self.rewriter.rewrite(question)
 
@@ -404,20 +496,25 @@ class RAGEngine:
             Tuple of (answer, sources, confidence, label, explanation,
             source_nodes).
         """
-        response = self.query_engine_sync.query(query)
-        answer = str(response)
+        with self.otel.span("rag.query", {"query_text": query[:200]}) as span:
+            response = self.query_engine_sync.query(query)
+            answer = str(response)
 
-        confidence, label, explanation = calculate_confidence(
-            response.source_nodes
-        )
+            confidence, label, explanation = calculate_confidence(
+                response.source_nodes
+            )
 
-        sources: list[dict] = []
-        for node in response.source_nodes:
-            fname = node.node.metadata.get("file_name", "unknown")
-            sources.append({
-                "file_name": fname,
-                "score": node.score if hasattr(node, "score") else None,
-            })
+            sources: list[dict] = []
+            for node in response.source_nodes:
+                fname = node.node.metadata.get("file_name", "unknown")
+                sources.append({
+                    "file_name": fname,
+                    "score": node.score if hasattr(node, "score") else None,
+                })
+
+            span.set_attribute("confidence", confidence)
+            span.set_attribute("num_sources", len(sources))
+            span.set_attribute("confidence_label", label)
 
         return answer, sources, confidence, label, explanation, response.source_nodes
 
@@ -654,6 +751,18 @@ class RAGEngine:
             A ``CodeResult`` containing all project files, validation
             results, detected features, and fix iteration history.
         """
+        # -- Guardrail check --------------------------------------------
+        gr = self.guardrail.check(description)
+        if not gr.passed:
+            return CodeResult(
+                header="",
+                implementation="",
+                project_files={},
+                explanation=f"Request rejected: {gr.reason}",
+                validation={"valid": False, "errors": [gr.reason]},
+            )
+        description = gr.sanitized_query
+
         result = self.code_gen.generate_full_plugin_with_rag(description)
 
         return CodeResult(
@@ -668,6 +777,56 @@ class RAGEngine:
             compile_result=result.get("compile_result"),
             generation_id=result.get("generation_id"),
         )
+
+    # ---- unified entry point with intent routing -----------------------
+
+    def ask(self, question: str, use_cache: bool = True):
+        """Unified entry point that automatically routes to the right handler.
+
+        Classifies the query intent (QUESTION, CODE_GENERATION, HYBRID) and
+        delegates to ``query()`` or ``generate_code()`` accordingly.
+
+        For HYBRID queries: runs ``query()`` first, then appends a code snippet
+        generated by ``generate_code()``.
+
+        Args:
+            question: User's natural-language question or request.
+            use_cache: Whether to check / populate the semantic cache.
+
+        Returns:
+            ``QueryResult`` for Q&A, ``CodeResult`` for code generation,
+            or ``QueryResult`` with appended code snippet for HYBRID.
+        """
+        intent_result = self.intent_router.classify(question)
+        logger.info(
+            "Intent: %s (confidence=%.2f) — %s",
+            intent_result.intent.value,
+            intent_result.confidence,
+            intent_result.routing_reason,
+        )
+
+        if intent_result.intent == Intent.CODE_GENERATION:
+            return self.generate_code(question)
+
+        elif intent_result.intent == Intent.HYBRID:
+            qa_result = self.query(question, use_cache=use_cache)
+            try:
+                code_result = self.generate_code(question)
+                # Append code snippet to the Q&A answer
+                snippet = code_result.header[:500] if code_result.header else ""
+                if snippet:
+                    qa_result.answer = (
+                        qa_result.answer
+                        + "\n\n**Code example:**\n```cpp\n"
+                        + snippet
+                        + "\n```"
+                    )
+            except Exception as e:
+                logger.warning("Hybrid code snippet generation failed: %s", e)
+            return qa_result
+
+        else:  # QUESTION (default)
+            return self.query(question, use_cache=use_cache)
 
     def record_code_feedback(
         self,

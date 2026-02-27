@@ -73,11 +73,11 @@ LOG_LEVEL=INFO
 ### 3. Run System
 
 ```bash
-# Start the RAG system
-python rag_2026.py
+# Start the interactive CLI
+python interactive_rag.py
 
-# Or in interactive mode
-python rag_2026.py "How do I hook the goal scored event?"
+# Or start the web GUI
+python rag_gui.py
 ```
 
 ### 4. Access Observability
@@ -477,7 +477,7 @@ If index is corrupted:
 rm -rf rag_storage/
 
 # Rebuild
-python rag_2026.py
+python -m bakkesmod_rag.comprehensive_builder
 ```
 
 ## Performance Tuning

@@ -28,7 +28,8 @@ class TestDefaults:
 
     def test_default_llm_config(self):
         cfg = LLMConfig()
-        assert cfg.primary_provider == "anthropic"
+        # Primary provider is gemini (free tier; Anthropic is in fallback chain)
+        assert cfg.primary_provider == "gemini"
         assert cfg.temperature == 0.0
         assert "openrouter" in cfg.fallback_providers
 
@@ -73,7 +74,7 @@ class TestRAGConfig:
         cfg = RAGConfig(openai_api_key="test")
         assert cfg.openai_api_key == "test"
         assert cfg.embedding.model == "text-embedding-3-small"
-        assert cfg.llm.primary_provider == "anthropic"
+        assert cfg.llm.primary_provider == "gemini"  # free tier primary
 
     def test_embedding_dimension_auto_correction(self):
         cfg = EmbeddingConfig(model="text-embedding-3-small", dimension=999)

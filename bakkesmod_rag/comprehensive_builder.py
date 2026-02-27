@@ -231,6 +231,18 @@ def build_comprehensive_stack(config=None, incremental=True):
         node_postprocessors=node_postprocessors if node_postprocessors else None,
     )
 
+    # ------------------------------------------------------------------
+    # 6. ColBERT index (optional, requires use_colbert=True)
+    # ------------------------------------------------------------------
+    if config.retriever.use_colbert:
+        print("Building ColBERT index...")
+        from bakkesmod_rag.retrieval import build_colbert_retriever
+        colbert_retriever = build_colbert_retriever(documents, config, storage_dir)
+        if colbert_retriever is not None:
+            print("ColBERT index built and ready.")
+        else:
+            print("ColBERT unavailable (ragatouille not installed).")
+
     elapsed = time.time() - start_time
     print(f"Comprehensive RAG stack ready ({mode_label}) in {elapsed:.1f}s.")
     return query_engine

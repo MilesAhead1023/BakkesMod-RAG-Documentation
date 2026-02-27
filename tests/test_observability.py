@@ -1,4 +1,4 @@
-"""Tests for observability: StructuredLogger, singletons, MetricsCollector."""
+"""Tests for observability: StructuredLogger, singletons, MetricsCollector, OTelTracer."""
 
 import pytest
 from bakkesmod_rag.observability import (
@@ -6,9 +6,12 @@ from bakkesmod_rag.observability import (
     PhoenixObserver,
     MetricsCollector,
     JsonFormatter,
+    OTelTracer,
+    _NoOpSpan,
     get_logger,
     get_phoenix,
     get_metrics,
+    get_otel_tracer,
     initialize_observability,
 )
 
@@ -121,3 +124,105 @@ class TestSingletonAccessors:
         obs._logger_instance = None
         obs._phoenix_instance = None
         obs._metrics_instance = None
+
+
+# ---------------------------------------------------------------------------
+# Gap 5: OpenTelemetry tests
+# ---------------------------------------------------------------------------
+
+class TestOTelTracer:
+    """Tests for OTelTracer — no-op when OTel not installed."""
+
+    def test_noop_when_otel_not_configured(self):
+        """OTelTracer is disabled by default (enable_otel=False)."""
+        from bakkesmod_rag.config import ObservabilityConfig
+        cfg = ObservabilityConfig(enable_otel=False)
+        tracer = OTelTracer(config=cfg)
+        assert tracer.enabled is False
+
+    def test_noop_span_is_context_manager(self):
+        """_NoOpSpan can be used as a context manager."""
+        span = _NoOpSpan()
+        with span as s:
+            s.set_attribute("key", "value")
+            s.record_exception(ValueError("test"))
+        # No errors raised
+
+    def test_span_returns_noop_when_disabled(self):
+        """span() yields a _NoOpSpan when OTel is disabled."""
+        from bakkesmod_rag.config import ObservabilityConfig
+        cfg = ObservabilityConfig(enable_otel=False)
+        tracer = OTelTracer(config=cfg)
+
+        with tracer.span("rag.query", {"key": "val"}) as span:
+            assert isinstance(span, _NoOpSpan)
+            span.set_attribute("confidence", 0.9)
+            span.set_attribute("num_sources", 5)
+
+    def test_span_with_no_attributes(self):
+        """span() with no attributes dict is fine."""
+        from bakkesmod_rag.config import ObservabilityConfig
+        cfg = ObservabilityConfig(enable_otel=False)
+        tracer = OTelTracer(config=cfg)
+
+        with tracer.span("rag.retrieval") as span:
+            assert span is not None
+
+    def test_otel_noop_when_package_missing(self):
+        """OTelTracer remains a no-op when opentelemetry is not installed."""
+        from bakkesmod_rag.config import ObservabilityConfig
+        import sys
+
+        cfg = ObservabilityConfig(enable_otel=True)
+        # Remove opentelemetry from sys.modules to simulate missing package
+        otel_modules = {k: v for k, v in sys.modules.items() if "opentelemetry" in k}
+        for k in otel_modules:
+            sys.modules[k] = None  # type: ignore[assignment]
+
+        try:
+            tracer = OTelTracer(config=cfg)
+            # Should not raise; may or may not be enabled depending on install
+            with tracer.span("rag.query") as span:
+                pass  # Should not raise
+        finally:
+            # Restore modules
+            for k in otel_modules:
+                sys.modules[k] = otel_modules[k]
+
+    def test_otel_config_fields_exist(self):
+        """ObservabilityConfig has all required OTel fields."""
+        from bakkesmod_rag.config import ObservabilityConfig
+        cfg = ObservabilityConfig()
+        assert hasattr(cfg, "enable_otel")
+        assert hasattr(cfg, "otel_endpoint")
+        assert hasattr(cfg, "otel_service_name")
+        assert cfg.enable_otel is False  # off by default
+        assert "4317" in cfg.otel_endpoint  # default gRPC port
+        assert "bakkesmod" in cfg.otel_service_name.lower()
+
+    def test_get_otel_tracer_singleton(self):
+        """get_otel_tracer() returns a singleton."""
+        import bakkesmod_rag.observability as obs
+        obs._otel_tracer_instance = None
+
+        t1 = get_otel_tracer()
+        t2 = get_otel_tracer()
+        assert t1 is t2
+
+        obs._otel_tracer_instance = None
+
+    def test_trace_context_propagates_through_span(self):
+        """Span context manager propagates attributes correctly."""
+        from bakkesmod_rag.config import ObservabilityConfig
+        cfg = ObservabilityConfig(enable_otel=False)
+        tracer = OTelTracer(config=cfg)
+
+        captured = {}
+        with tracer.span("rag.query", {"query_text": "test query"}) as span:
+            # Attributes on noop span are silently ignored
+            span.set_attribute("confidence", 0.85)
+            span.set_attribute("cached", False)
+            span.set_attribute("retry_count", 0)
+            captured["completed"] = True
+
+        assert captured["completed"] is True

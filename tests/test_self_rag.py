@@ -93,7 +93,7 @@ class TestSelfRAGRetryIntegration:
 
     def _make_fusion(self, retrievers):
         fusion = MagicMock()
-        fusion.retrievers = retrievers
+        fusion._retrievers = retrievers  # must match retrieval.py's fusion_retriever._retrievers
         return fusion
 
     def test_escalation_applied_during_retry(self):

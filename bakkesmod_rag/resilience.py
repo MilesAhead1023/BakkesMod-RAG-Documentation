@@ -7,7 +7,7 @@ Circuit breakers, retry strategies, and fallback mechanisms.
 import time
 import random
 import logging
-from typing import Callable, Any, List
+from typing import Callable, Any, List, Optional
 from functools import wraps
 from datetime import datetime
 from threading import Lock
@@ -244,6 +244,116 @@ class APICallManager:
 # ---------------------------------------------------------------------------
 # resilient_api_call decorator
 # ---------------------------------------------------------------------------
+
+class RedisCircuitBreaker:
+    """Circuit breaker backed by Redis for multi-process consistency.
+
+    Stores breaker state (failure count, last failure time, state) in a
+    Redis hash so all worker processes see the same view of each provider's
+    health.
+
+    Falls back to an in-memory CircuitBreaker if Redis is unavailable.
+
+    Args:
+        name: Provider name, used as part of the Redis key.
+        redis_url: Redis connection URL.
+        failure_threshold: Failures before opening the circuit.
+        recovery_timeout: Seconds before attempting a half-open reset.
+    """
+
+    _KEY_PREFIX = "cb:"
+
+    def __init__(
+        self,
+        name: str,
+        redis_url: str = "redis://localhost:6379",
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+    ):
+        self.name = name
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self._redis = None
+        self._fallback: Optional[CircuitBreaker] = None
+
+        try:
+            import redis as _redis
+            client = _redis.from_url(redis_url, socket_connect_timeout=2)
+            client.ping()
+            self._redis = client
+        except Exception as e:
+            logger.warning(
+                "RedisCircuitBreaker falling back to in-memory for '%s': %s",
+                name, e,
+            )
+            self._fallback = CircuitBreaker(
+                failure_threshold=failure_threshold,
+                recovery_timeout=recovery_timeout,
+            )
+
+    def _key(self) -> str:
+        return f"{self._KEY_PREFIX}{self.name}"
+
+    def _get_state(self) -> str:
+        if self._redis is None:
+            return CircuitBreaker.CLOSED
+        raw = self._redis.hget(self._key(), "state")
+        return (raw or b"closed").decode("utf-8")
+
+    def _get_failures(self) -> int:
+        if self._redis is None:
+            return 0
+        raw = self._redis.hget(self._key(), "failures")
+        return int(raw or 0)
+
+    def _get_last_failure_time(self) -> Optional[float]:
+        if self._redis is None:
+            return None
+        raw = self._redis.hget(self._key(), "last_failure")
+        return float(raw) if raw else None
+
+    def call(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function with Redis-backed circuit breaker protection."""
+        if self._fallback is not None:
+            return self._fallback.call(func, *args, **kwargs)
+
+        state = self._get_state()
+
+        if state == CircuitBreaker.OPEN:
+            last_failure = self._get_last_failure_time()
+            if last_failure and (time.time() - last_failure) >= self.recovery_timeout:
+                # Attempt half-open
+                self._redis.hset(self._key(), "state", CircuitBreaker.HALF_OPEN)
+            else:
+                raise CircuitBreakerOpen(
+                    f"Redis circuit breaker OPEN for '{self.name}'"
+                )
+
+        try:
+            result = func(*args, **kwargs)
+            # Success: reset state
+            self._redis.hset(self._key(), mapping={
+                "state": CircuitBreaker.CLOSED,
+                "failures": 0,
+            })
+            return result
+        except Exception:
+            failures = self._redis.hincrby(self._key(), "failures", 1)
+            self._redis.hset(self._key(), "last_failure", time.time())
+            if failures >= self.failure_threshold:
+                self._redis.hset(self._key(), "state", CircuitBreaker.OPEN)
+                logger.error(
+                    "Redis circuit breaker OPEN for '%s' after %d failures",
+                    self.name, failures,
+                )
+            raise
+
+    @property
+    def state(self) -> str:
+        if self._fallback is not None:
+            return self._fallback.state
+        return self._get_state()
+
 
 def resilient_api_call(
     max_retries: int = 3,

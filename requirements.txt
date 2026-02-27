@@ -54,6 +54,21 @@ tiktoken>=0.5.0  # Token counting for cost estimation
 # MCP Integration
 mcp>=0.1.0
 
+# Gap 5: OpenTelemetry (optional — no-op stub if not installed)
+opentelemetry-api>=1.20.0  # optional
+
+# Gap 6: Redis semantic cache (optional — falls back to file cache)
+redis>=5.0.0  # optional
+
+# Gap 7: ColBERT multi-vector retrieval (optional)
+ragatouille>=0.0.8  # optional
+
+# Gap 8: FastAPI HTTP layer for horizontal scaling
+fastapi>=0.110.0  # optional
+uvicorn>=0.27.0  # optional
+httpx>=0.25.0  # required by FastAPI TestClient
+
 # Testing
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
+fakeredis>=2.0.0  # optional — for Redis cache tests

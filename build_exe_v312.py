@@ -30,18 +30,18 @@ def check_dependencies():
     
     try:
         import PyInstaller
-        print(f"✓ PyInstaller {PyInstaller.__version__} installed")
+        print(f"[OK] PyInstaller {PyInstaller.__version__} installed")
     except ImportError:
-        print("✗ PyInstaller not found. Installing...")
+        print("[X] PyInstaller not found. Installing...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
-        print("✓ PyInstaller installed")
+        print("[OK] PyInstaller installed")
     
     # Check if spec file exists
     spec_file = Path("bakkesmod_rag_gui.spec")
     if not spec_file.exists():
-        print(f"✗ Spec file not found: {spec_file}")
+        print(f"[X] Spec file not found: {spec_file}")
         return False
-    print(f"✓ Spec file found: {spec_file}")
+    print(f"[OK] Spec file found: {spec_file}")
     
     return True
 
@@ -55,7 +55,7 @@ def clean_build_dirs():
         if dir_path.exists():
             print(f"Removing {dir_path}...")
             shutil.rmtree(dir_path)
-            print(f"✓ Removed {dir_path}")
+            print(f"[OK] Removed {dir_path}")
         else:
             print(f"• {dir_path} does not exist (skipping)")
 
@@ -63,8 +63,17 @@ def build_executable():
     """Build the executable using PyInstaller"""
     print_header("Building Executable with PyInstaller")
     
+    # Use the pyinstaller executable from the current environment
+    # On Windows, this is usually in the same directory as the python executable
+    python_dir = Path(sys.executable).parent
+    pyinstaller_exe = str(python_dir / "pyinstaller.exe")
+    
+    # Fallback to just "pyinstaller" if the specific exe isn't found
+    if not os.path.exists(pyinstaller_exe):
+        pyinstaller_exe = "pyinstaller"
+    
     cmd = [
-        "pyinstaller",
+        pyinstaller_exe,
         "--clean",
         "--noconfirm",
         "bakkesmod_rag_gui.spec"
@@ -75,24 +84,24 @@ def build_executable():
     
     try:
         subprocess.check_call(cmd)
-        print("\n" + "✓" * 70)
-        print("✓ Build completed successfully!")
-        print("✓" * 70)
+        print("\n" + "*" * 70)
+        print("[OK] Build completed successfully!")
+        print("*" * 70)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ Build failed with error code {e.returncode}")
+        print(f"\n[X] Build failed with error code {e.returncode}")
         return False
 
 def verify_output():
     """Verify the build output"""
     print_header("Verifying Build Output")
     
-    exe_path = Path("dist/BakkesMod_RAG_GUI/BakkesMod_RAG_GUI.exe")
+    exe_path = Path("dist") / "BakkesMod_RAG_GUI" / "BakkesMod_RAG_GUI.exe"
     
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)
-        print(f"✓ Executable created: {exe_path}")
-        print(f"✓ Size: {size_mb:.1f} MB")
+        print(f"[OK] Executable created: {exe_path}")
+        print(f"[OK] Size: {size_mb:.1f} MB")
         
         # Check for required data directories
         dist_dir = exe_path.parent
@@ -101,13 +110,13 @@ def verify_output():
         for dir_name in required_dirs:
             dir_path = dist_dir / dir_name
             if dir_path.exists():
-                print(f"✓ Data directory included: {dir_name}/")
+                print(f"[OK] Data directory included: {dir_name}/")
             else:
-                print(f"⚠ Warning: Missing data directory: {dir_name}/")
+                print(f"! Warning: Missing data directory: {dir_name}/")
         
         return True
     else:
-        print(f"✗ Executable not found: {exe_path}")
+        print(f"[X] Executable not found: {exe_path}")
         return False
 
 def create_readme():
@@ -165,9 +174,9 @@ SUPPORT:
 GitHub Issues: https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/issues
 """
     
-    readme_path = Path("dist/BakkesMod_RAG_GUI/README.txt")
+    readme_path = Path("dist") / "BakkesMod_RAG_GUI" / "README.txt"
     readme_path.write_text(readme_content)
-    print(f"✓ Created: {readme_path}")
+    print(f"[OK] Created: {readme_path}")
 
 def main():
     """Main build process"""
@@ -179,7 +188,7 @@ def main():
     
     # Step 1: Check dependencies
     if not check_dependencies():
-        print("\n✗ Dependency check failed. Please fix the issues and try again.")
+        print("\n[X] Dependency check failed. Please fix the issues and try again.")
         return 1
     
     # Step 2: Clean old builds
@@ -187,12 +196,12 @@ def main():
     
     # Step 3: Build executable
     if not build_executable():
-        print("\n✗ Build failed. Check the error messages above.")
+        print("\n[X] Build failed. Check the error messages above.")
         return 1
     
     # Step 4: Verify output
     if not verify_output():
-        print("\n✗ Build verification failed.")
+        print("\n[X] Build verification failed.")
         return 1
     
     # Step 5: Create distribution README
@@ -201,9 +210,9 @@ def main():
     # Success message
     print_header("Build Complete!")
     print("Your executable is ready:")
-    print("  📁 Location: dist/BakkesMod_RAG_GUI/")
-    print("  🚀 Executable: BakkesMod_RAG_GUI.exe")
-    print("  📖 Instructions: README.txt")
+    print("  Location: dist/BakkesMod_RAG_GUI/")
+    print("  Executable: BakkesMod_RAG_GUI.exe")
+    print("  Instructions: README.txt")
     print("\nNext steps:")
     print("  1. Copy .env.example to dist/BakkesMod_RAG_GUI/.env")
     print("  2. Edit .env and add your API keys")
