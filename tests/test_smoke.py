@@ -4,8 +4,10 @@ Tests the unified bakkesmod_rag package at the syntax/import level.
 """
 
 import os
+import pathlib
 import py_compile
-import pytest
+
+ROOT = pathlib.Path(__file__).parent.parent
 
 
 # Set dummy API keys for import testing
@@ -42,7 +44,7 @@ def test_python_syntax_validation():
     ]
 
     for file in package_files + entry_files:
-        py_compile.compile(file, doraise=True)
+        py_compile.compile(str(ROOT / file), doraise=True)
 
 
 def test_module_imports():
