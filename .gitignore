@@ -100,3 +100,6 @@ generated_plugins/
 sqlite.db
 test_results.txt
 test_results_runnable.txt
+
+# Git worktrees
+.worktrees/
