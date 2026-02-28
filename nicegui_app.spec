@@ -27,16 +27,13 @@ hiddenimports += collect_submodules('bakkesmod_rag')
 hiddenimports += collect_submodules('llama_index')
 hiddenimports += collect_submodules('anthropic')
 hiddenimports += collect_submodules('openai')
+hiddenimports += collect_submodules('pywebview')  # includes all pywebview.* submodules
 hiddenimports += [
     'dotenv',
     'nest_asyncio',
     'tiktoken',
     'faiss',
-    'pywebview',
 ]
-
-if sys.platform == 'win32':
-    hiddenimports += ['pywebview.platforms.winforms']
 
 excludes = [
     # Dev/test tools
