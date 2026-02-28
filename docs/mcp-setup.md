@@ -26,7 +26,7 @@ That's it. The server registers globally and is available in every Claude Code s
 
 ## Manual Configuration (Alternative)
 
-If you prefer to configure manually, add this to `~/.claude/settings.json`:
+If you prefer to configure manually, add this to `~/.claude.json`:
 
 ```json
 {
@@ -41,6 +41,23 @@ If you prefer to configure manually, add this to `~/.claude/settings.json`:
 ```
 
 Replace `/path/to/BakkesMod-RAG-Documentation` with the actual path to this project.
+
+If your `OPENAI_API_KEY` is not set as a system environment variable, you can pass it explicitly using the `env` key:
+
+```json
+{
+  "mcpServers": {
+    "bakkesmod-rag": {
+      "command": "python",
+      "args": ["-m", "bakkesmod_rag.mcp_server"],
+      "cwd": "/path/to/BakkesMod-RAG-Documentation",
+      "env": {
+        "OPENAI_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
 
 ## Available Tools
 
