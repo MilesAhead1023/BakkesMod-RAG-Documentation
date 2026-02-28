@@ -133,8 +133,8 @@ pytest tests/test_cache.py -v
 # Run a single test
 pytest tests/test_confidence.py::test_high_confidence -v
 
-# Smoke tests (root-level)
-pytest test_smoke.py -v
+# Smoke tests (fast, no API keys needed)
+pytest tests/test_smoke.py -v
 ```
 
 Unit tests use mocks from `tests/conftest.py` and don't require API keys.

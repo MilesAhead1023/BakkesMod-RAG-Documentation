@@ -15,8 +15,8 @@ pytest tests/test_cache.py -v
 # Run a single test by name
 pytest tests/test_confidence.py::test_high_confidence -v
 
-# Smoke tests (quick sanity check, root-level)
-pytest test_smoke.py -v
+# Smoke tests (fast, no API keys needed)
+pytest tests/test_smoke.py -v
 
 # Validate environment & API keys before building indices
 python -m bakkesmod_rag.sentinel
