@@ -84,12 +84,14 @@ rag_gui.py               # Gradio web GUI — used by Docker (1174 lines)
 ### LLM Fallback Chain
 
 Defined once in `bakkesmod_rag/llm_provider.py`. Priority order, each verified with a live `"Say OK"` test call at startup:
-1. Anthropic Claude Sonnet (premium)
-2. OpenRouter / DeepSeek V3 (FREE)
-3. Google Gemini 2.5 Flash (FREE)
-4. OpenAI GPT-4o-mini (cheap)
+1. Anthropic Claude Sonnet (`ANTHROPIC_API_KEY`) -- premium
+2. OpenAI GPT-4o (`OPENAI_API_KEY`) -- best non-Anthropic quality
+3. Google Gemini 2.5 Pro (`GOOGLE_API_KEY`) -- high quality paid
+4. OpenRouter / DeepSeek V3 (`OPENROUTER_API_KEY`) -- FREE
+5. Google Gemini 2.5 Flash (`GOOGLE_API_KEY`) -- FREE tier, fast
+6. Ollama local model -- auto-detected, no config, works offline
 
-If one provider's credits are exhausted, the system automatically falls through to the next.
+If one provider's credits are exhausted or unavailable, the system automatically falls through to the next.
 
 ### 3-Way Fusion Retrieval
 

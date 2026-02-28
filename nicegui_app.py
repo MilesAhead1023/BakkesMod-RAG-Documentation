@@ -246,7 +246,7 @@ def main_page():
                             f"Error: {_engine_error or 'unknown'}"
                         )
                         return
-                    result = await asyncio.get_event_loop().run_in_executor(
+                    result = await asyncio.get_running_loop().run_in_executor(
                         None,
                         lambda: eng.query(
                             query_input.value,
@@ -344,7 +344,7 @@ def main_page():
                             f"// Error: {_engine_error or 'unknown'}"
                         )
                         return
-                    result = await asyncio.get_event_loop().run_in_executor(
+                    result = await asyncio.get_running_loop().run_in_executor(
                         None,
                         lambda: eng.generate_code(
                             codegen_input.value
@@ -424,7 +424,7 @@ def main_page():
             async def show_class_detail(class_name: str):
                 """Display details for a selected class."""
                 sdk_detail_container.clear()
-                classes = await asyncio.get_event_loop().run_in_executor(
+                classes = await asyncio.get_running_loop().run_in_executor(
                     None, _get_sdk_classes
                 )
                 cls_info = classes.get(class_name)
@@ -471,7 +471,7 @@ def main_page():
             async def refresh_sdk_list():
                 """Refresh the SDK class list filtered by search."""
                 sdk_list_container.clear()
-                classes = await asyncio.get_event_loop().run_in_executor(
+                classes = await asyncio.get_running_loop().run_in_executor(
                     None, _get_sdk_classes
                 )
                 if not classes:
@@ -544,7 +544,7 @@ def main_page():
                     with ui.card().classes("w-full"):
                         ui.label("LLM Provider").classes("text-subtitle1")
                         try:
-                            llm = await asyncio.get_event_loop().run_in_executor(
+                            llm = await asyncio.get_running_loop().run_in_executor(
                                 None,
                                 lambda: get_llm(allow_null=True),
                             )
@@ -808,7 +808,7 @@ async def _test_api_key(provider: str, key: str):
     ui.notify(f"Testing {provider} key...", type="info", timeout=2000)
 
     try:
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None, lambda: _do_test_key(provider, key)
         )
         if result:

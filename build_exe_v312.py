@@ -9,7 +9,7 @@ Usage:
     python build_exe.py
 
 Output:
-    dist/BakkesMod_RAG_GUI/BakkesMod_RAG_GUI.exe
+    dist/BakkesModRAG/BakkesModRAG.exe
 """
 
 import os
@@ -37,7 +37,7 @@ def check_dependencies():
         print("[OK] PyInstaller installed")
     
     # Check if spec file exists
-    spec_file = Path("bakkesmod_rag_gui.spec")
+    spec_file = Path("nicegui_app.spec")
     if not spec_file.exists():
         print(f"[X] Spec file not found: {spec_file}")
         return False
@@ -76,7 +76,7 @@ def build_executable():
         pyinstaller_exe,
         "--clean",
         "--noconfirm",
-        "bakkesmod_rag_gui.spec"
+        "nicegui_app.spec"
     ]
     
     print(f"Running: {' '.join(cmd)}")
@@ -96,7 +96,7 @@ def verify_output():
     """Verify the build output"""
     print_header("Verifying Build Output")
     
-    exe_path = Path("dist") / "BakkesMod_RAG_GUI" / "BakkesMod_RAG_GUI.exe"
+    exe_path = Path("dist") / "BakkesModRAG" / "BakkesModRAG.exe"
     
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)
@@ -123,15 +123,15 @@ def create_readme():
     """Create a README file for the distribution"""
     print_header("Creating Distribution README")
     
-    readme_content = """BakkesMod RAG GUI - Standalone Windows Executable
+    readme_content = """BakkesMod RAG - Standalone Windows Executable
 ================================================
 
 QUICK START:
 ------------
 1. Extract this folder to your desired location
 2. Create a .env file with your API keys (copy .env.example)
-3. Run BakkesMod_RAG_GUI.exe
-4. The GUI will open in your default web browser at http://localhost:7860
+3. Run BakkesModRAG.exe
+4. The NiceGUI app will open in your default web browser at http://localhost:8080
 
 REQUIREMENTS:
 -------------
@@ -144,7 +144,7 @@ REQUIREMENTS:
 
 CONFIGURATION:
 --------------
-Create a .env file in the same directory as BakkesMod_RAG_GUI.exe:
+Create a .env file in the same directory as BakkesModRAG.exe:
 
     OPENAI_API_KEY=your_openai_key_here
     ANTHROPIC_API_KEY=your_anthropic_key_here
@@ -174,7 +174,7 @@ SUPPORT:
 GitHub Issues: https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/issues
 """
     
-    readme_path = Path("dist") / "BakkesMod_RAG_GUI" / "README.txt"
+    readme_path = Path("dist") / "BakkesModRAG" / "README.txt"
     readme_path.write_text(readme_content)
     print(f"[OK] Created: {readme_path}")
 
@@ -210,14 +210,14 @@ def main():
     # Success message
     print_header("Build Complete!")
     print("Your executable is ready:")
-    print("  Location: dist/BakkesMod_RAG_GUI/")
-    print("  Executable: BakkesMod_RAG_GUI.exe")
+    print("  Location: dist/BakkesModRAG/")
+    print("  Executable: BakkesModRAG.exe")
     print("  Instructions: README.txt")
     print("\nNext steps:")
-    print("  1. Copy .env.example to dist/BakkesMod_RAG_GUI/.env")
+    print("  1. Copy .env.example to dist/BakkesModRAG/.env")
     print("  2. Edit .env and add your API keys")
-    print("  3. Run BakkesMod_RAG_GUI.exe")
-    print("  4. Access the GUI at http://localhost:7860")
+    print("  3. Run BakkesModRAG.exe")
+    print("  4. Access the app at http://localhost:8080")
     
     return 0
 
