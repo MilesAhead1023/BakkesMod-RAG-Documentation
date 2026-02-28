@@ -20,16 +20,16 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p logs .cache rag_storage
 
-# Expose ports for Phoenix and Prometheus
-EXPOSE 6006 8000
+# Expose port for GUI
+EXPOSE 7860
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV LOG_LEVEL=INFO
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/metrics')"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/')"
 
 # Default command (can be overridden)
 CMD ["python", "rag_gui.py"]
