@@ -10,7 +10,7 @@ Your RAG system is fully operational! Here's how to use it on **Windows 11** (pr
 - **Vector + BM25 hybrid search** for best results
 - **Claude Sonnet 4.5** for high-quality responses
 - **Persistent caching** for fast startup (~34s vs 70s)
-- **10 documents indexed** with 5,435 searchable chunks
+- **215+ documents indexed** from SDK headers, markdown guides, and templates
 
 ---
 
@@ -117,8 +117,9 @@ All settings are in `bakkesmod_rag/config.py`:
 
 ### Change the LLM
 ```python
-primary_model: str = "claude-sonnet-4-5"  # Current
+primary_model: str = "gemini-2.5-flash"   # Default (free)
 # or
+primary_model: str = "claude-sonnet-4-5"  # Switch to Anthropic
 primary_model: str = "gpt-4o"             # Switch to OpenAI
 ```
 
@@ -138,7 +139,7 @@ Edit `bakkesmod_rag/config.py` and set `enable_kg: bool = True` (slower build, b
 
 ### Current Setup
 - Using `text-embedding-3-small` (cheaper embeddings)
-- Using `claude-sonnet-4-5` (premium LLM)
+- Using `gemini-2.5-flash` (default free LLM, falls back through provider chain)
 - Index cached (no rebuild costs)
 
 ### To Reduce Costs
@@ -162,6 +163,7 @@ Subsequent runs: ~34 seconds (loads cache)
 
 ### "Query failed" or "Unknown model"
 Model names must match LlamaIndex format:
+- ✅ `gemini-2.5-flash`
 - ✅ `claude-sonnet-4-5`
 - ✅ `gpt-4o-mini`
 - ❌ `claude-3-5-sonnet-20240620` (old format)
@@ -221,7 +223,7 @@ Combines 3 methods for best results:
 - Claude Sonnet 4.5 for generation
 - Source attribution
 - Code-aware formatting
-- No hallucinations
+- Source-attributed answers grounded in indexed documentation
 
 ---
 

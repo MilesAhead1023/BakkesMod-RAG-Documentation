@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 - `bakkesmod_rag/`: core Python package (engine, retrieval, generation, config, API, observability).
-- `tests/`: primary pytest suite (`test_*.py`), plus root `test_smoke.py` for quick end-to-end checks.
+- `tests/`: primary pytest suite (`test_*.py`), including `tests/test_smoke.py` for fast syntax and import checks.
 - `docs/`: architecture, setup, deployment, and code-generation documentation.
 - `docs_bakkesmod_only/`: BakkesMod SDK reference headers and focused source material.
 - `templates/`: C++ plugin template files used by generation workflows.
@@ -10,12 +10,14 @@
 
 ## Build, Test, and Development Commands
 - `python -m venv venv` then `venv\Scripts\activate` (Windows) or `source venv/bin/activate` (Unix): create and activate environment.
-- `pip install -r requirements.txt`: install project and test dependencies.
+- `pip install -r requirements.txt -r requirements-dev.txt`: install core + dev/test dependencies.
+- `pip install -r requirements-optional.txt`: install optional features (observability, evaluation, API server).
 - `python -m bakkesmod_rag.sentinel`: validate environment/API key setup.
 - `python -m bakkesmod_rag.comprehensive_builder`: build or refresh local RAG indices in `rag_storage/`.
 - `python interactive_rag.py`: run CLI interface.
 - `python rag_gui.py`: run local web GUI.
-- `pytest -v` or `pytest tests/test_cache.py -v`: run all tests or a targeted module.
+- `pytest -m "not integration" -v`: run fast tests (no API keys needed).
+- `pytest -v` or `pytest tests/test_cache.py -v`: run all tests (including integration) or a targeted module.
 
 ## Coding Style & Naming Conventions
 - Follow PEP 8, 4-space indentation, and max line length of 100.
