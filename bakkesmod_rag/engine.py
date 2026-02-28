@@ -148,10 +148,29 @@ class RAGEngine:
         self.llm = get_llm(self.config)
         self.embed_model = get_embed_model(self.config)
 
-        # Set LlamaIndex global settings
+        # Set LlamaIndex global settings.
+        # Use property setters when possible; fall back to direct attribute
+        # assignment if resolve_llm() / resolve_embed_model() trigger a
+        # langchain_core → transformers → torch DLL load failure on Windows.
         from llama_index.core import Settings
-        Settings.llm = self.llm
-        Settings.embed_model = self.embed_model
+        try:
+            Settings.llm = self.llm
+        except (OSError, ImportError) as _err:
+            logger.warning(
+                "Settings.llm setter triggered an import/DLL failure "
+                "(%s); setting _llm directly to bypass resolve_llm().",
+                _err,
+            )
+            Settings._llm = self.llm
+        try:
+            Settings.embed_model = self.embed_model
+        except (OSError, ImportError) as _err:
+            logger.warning(
+                "Settings.embed_model setter triggered an import/DLL failure "
+                "(%s); setting _embed_model directly.",
+                _err,
+            )
+            Settings._embed_model = self.embed_model
 
         # Semantic cache ------------------------------------------------
         self.cache = SemanticCache(
