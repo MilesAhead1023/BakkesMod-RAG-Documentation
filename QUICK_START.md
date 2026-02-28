@@ -35,7 +35,11 @@ Commands:
 
 ### Option 2: Run Test Suite
 ```bash
-pytest tests/ -v
+# Run fast tests (no API keys needed)
+pytest -m "not integration" -v
+
+# Run all tests including integration (requires API keys + built index)
+pytest -v
 ```
 
 Runs all unit and integration tests.
@@ -101,7 +105,6 @@ BakkesMod-RAG-Documentation/
 ├── rag_gui.py                  # Web-based GUI (Gradio)
 ├── bakkesmod_rag/              # Core package (all RAG logic)
 ├── .env                        # Your API keys
-├── TEST_RESULTS.md             # Detailed test report
 ├── QUICK_START.md              # This file
 └── rag_storage/                # Cached vector index
 ```
@@ -173,7 +176,7 @@ Already fixed! All emojis replaced with `[OK]`, `[WARNING]`, etc.
 ### Immediate
 1. ✅ Run `python interactive_rag.py`
 2. ✅ Ask your own questions
-3. ✅ Review `TEST_RESULTS.md` for details
+3. ✅ Run `pytest -m "not integration" -v` to verify the installation
 
 ### Soon
 1. Enable Knowledge Graph (edit `bakkesmod_rag/config.py`)
@@ -191,10 +194,11 @@ Already fixed! All emojis replaced with `[OK]`, `[WARNING]`, etc.
 
 ## 📚 Documentation
 
-- **TEST_RESULTS.md** - Full test report with metrics
 - **README.md** - Project overview
 - **CLAUDE.md** - System architecture and design overview
 - **docs/deployment-guide.md** - Production deployment
+- **docs/rag-setup.md** - Installation and configuration
+- **docs/CODE_GENERATION_GUIDE.md** - Plugin code generation
 
 ---
 
@@ -234,5 +238,4 @@ Happy coding! 🚀
 
 ---
 
-*Built with the 2026 Gold Standard RAG Architecture*
-*Tested 2026-02-07 - All systems operational ✅*
+*Built with LlamaIndex — 3-way fusion RAG with LLM fallback chain*
