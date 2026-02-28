@@ -1,0 +1,38 @@
+# Optional dependencies for advanced features.
+# Install individual groups as needed.
+#
+# Observability (Phoenix tracing + Prometheus metrics):
+#   pip install arize-phoenix openinference-instrumentation-llama-index prometheus-client opentelemetry-api
+#
+# RAG evaluation (RAGAS):
+#   pip install ragas datasets
+#
+# Distributed cache (Redis):
+#   pip install redis
+#
+# ColBERT reranking:
+#   pip install ragatouille
+#
+# REST API server:
+#   pip install fastapi uvicorn httpx
+
+# Observability & monitoring
+arize-phoenix>=4.0.0
+openinference-instrumentation-llama-index>=2.0.0
+prometheus-client>=0.19.0
+opentelemetry-api>=1.20.0
+
+# Evaluation & quality assurance
+ragas>=0.1.0
+datasets>=2.0.0
+
+# Distributed cache
+redis>=5.0.0
+
+# Advanced reranking (ColBERT)
+ragatouille>=0.0.8
+
+# REST API server
+fastapi>=0.110.0
+uvicorn>=0.27.0
+httpx>=0.25.0

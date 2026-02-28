@@ -1,4 +1,8 @@
-# Core RAG
+# Core runtime dependencies — required to run the RAG system and GUI.
+# For development/testing:  pip install -r requirements-dev.txt
+# For optional features:    pip install -r requirements-optional.txt
+
+# LlamaIndex core
 llama-index-core>=0.14.6
 llama-index-embeddings-openai>=0.1.0
 llama-index-embeddings-huggingface>=0.1.0
@@ -13,7 +17,7 @@ nest-asyncio>=1.5.0
 tenacity>=8.0.0
 tiktoken>=0.5.0
 
-# LLM Providers
+# LLM providers
 llama-index-llms-google-genai>=0.1.0
 llama-index-llms-anthropic>=0.1.0
 llama-index-llms-openai>=0.1.0
@@ -23,37 +27,16 @@ anthropic>=0.25.0
 openai>=1.0.0
 cohere>=5.0.0
 
-# GUI & Web
+# GUI
 gradio>=4.0.0
 
 # Utilities
+numpy>=1.24.0
 pandas>=2.0.0
 pygments>=2.15.0
 colorama>=0.4.6
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 
-# Observability & Monitoring
-arize-phoenix>=4.0.0
-openinference-instrumentation-llama-index>=2.0.0
-prometheus-client>=0.19.0
-
-# MCP Integration
+# MCP server integration
 mcp>=0.1.0
-
-# Evaluation & Quality Assurance
-ragas>=0.1.0
-datasets>=2.0.0
-
-# Optional / Development
-opentelemetry-api>=1.20.0
-redis>=5.0.0
-ragatouille>=0.0.8
-fastapi>=0.110.0
-uvicorn>=0.27.0
-httpx>=0.25.0
-
-# Testing
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-fakeredis>=2.0.0
