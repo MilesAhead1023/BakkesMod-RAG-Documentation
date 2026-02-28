@@ -10,8 +10,9 @@ services:
       - ./templates:/app/templates:ro
       - rag_storage:/app/rag_storage
       - logs:/app/logs
-      - ./.env:/app/.env
     restart: unless-stopped
+    networks:
+      - rag-network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/')"]
       interval: 30s
@@ -28,6 +29,10 @@ services:
       - ./templates:/app/templates:ro
       - rag_storage:/app/rag_storage
     restart: unless-stopped
+    healthcheck:
+      disable: true
+    networks:
+      - rag-network
 
   redis:
     image: redis:7-alpine
@@ -48,8 +53,15 @@ services:
       - ./docs_bakkesmod_only:/app/docs_bakkesmod_only:ro
       - ./templates:/app/templates:ro
       - rag_storage:/app/rag_storage
+      - logs:/app/logs
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
     networks:
       - rag-network
 

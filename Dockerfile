@@ -27,9 +27,5 @@ EXPOSE 7860
 ENV PYTHONUNBUFFERED=1
 ENV LOG_LEVEL=INFO
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/')"
-
 # Default command (can be overridden)
 CMD ["python", "rag_gui.py"]
