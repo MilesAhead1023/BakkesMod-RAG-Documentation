@@ -1688,8 +1688,8 @@ def main_page():
                             llm_kg_model.value = models[0]
                         llm_kg_model.update()
 
-                    llm_primary_provider.on_change(_on_primary_provider_change)
-                    llm_kg_provider.on_change(_on_kg_provider_change)
+                    llm_primary_provider.on_value_change(_on_primary_provider_change)
+                    llm_kg_provider.on_value_change(_on_kg_provider_change)
 
                     async def _refresh_primary_models():
                         prov = llm_primary_provider.value
@@ -2604,17 +2604,23 @@ def main_page():
     _startup_settings = _load_settings_dict()
     if _startup_settings.get("auto_build_indexes") == "auto" and not _indexes_exist():
         async def _auto_build_on_startup():
-            ui.notify(
-                "Auto-building indexes (configured in Settings)…",
-                type="info",
-                timeout=6000,
-            )
+            try:
+                ui.notify(
+                    "Auto-building indexes (configured in Settings)…",
+                    type="info",
+                    timeout=6000,
+                )
+            except RuntimeError:
+                pass  # Parent element deleted (tab switched), skip notification
             await _do_build_indexes_bg(console_log)
-            ui.notify(
-                "Index build complete — restart the app to activate.",
-                type="positive",
-                timeout=8000,
-            )
+            try:
+                ui.notify(
+                    "Index build complete — restart the app to activate.",
+                    type="positive",
+                    timeout=8000,
+                )
+            except RuntimeError:
+                pass  # Parent element deleted, skip notification
         ui.timer(5.0, _auto_build_on_startup, once=True)
 
 
