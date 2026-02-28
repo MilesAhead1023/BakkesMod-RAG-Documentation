@@ -24,7 +24,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 # Ensure UTF-8 output encoding on Windows
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -421,10 +421,12 @@ def main_page():
                 "w-full border rounded p-4 min-h-[200px]"
             )
 
-            def show_class_detail(class_name: str):
+            async def show_class_detail(class_name: str):
                 """Display details for a selected class."""
                 sdk_detail_container.clear()
-                classes = _get_sdk_classes()
+                classes = await asyncio.get_event_loop().run_in_executor(
+                    None, _get_sdk_classes
+                )
                 cls_info = classes.get(class_name)
                 if cls_info is None:
                     with sdk_detail_container:
@@ -466,10 +468,12 @@ def main_page():
                             "text-caption text-grey-6"
                         )
 
-            def refresh_sdk_list():
+            async def refresh_sdk_list():
                 """Refresh the SDK class list filtered by search."""
                 sdk_list_container.clear()
-                classes = _get_sdk_classes()
+                classes = await asyncio.get_event_loop().run_in_executor(
+                    None, _get_sdk_classes
+                )
                 if not classes:
                     with sdk_list_container:
                         ui.label(
@@ -524,7 +528,7 @@ def main_page():
             ui.label("Dashboard").classes("text-h6")
             dash_container = ui.column().classes("w-full")
 
-            def refresh_dashboard():
+            async def refresh_dashboard():
                 """Refresh dashboard stats."""
                 dash_container.clear()
                 eng = get_engine()
@@ -540,7 +544,10 @@ def main_page():
                     with ui.card().classes("w-full"):
                         ui.label("LLM Provider").classes("text-subtitle1")
                         try:
-                            llm = get_llm(allow_null=True)
+                            llm = await asyncio.get_event_loop().run_in_executor(
+                                None,
+                                lambda: get_llm(allow_null=True),
+                            )
                             if isinstance(llm, NullLLM):
                                 ui.label(
                                     "No LLM configured"
@@ -738,7 +745,7 @@ def main_page():
                 """Save all settings to .env file."""
                 try:
                     from dotenv import set_key
-                    env_path = Path(".env")
+                    env_path = Path(__file__).parent / ".env"
                     if not env_path.exists():
                         env_path.write_text("", encoding="utf-8")
                     set_key(
@@ -838,9 +845,8 @@ def _do_test_key(provider: str, key: str) -> bool:
             return bool(resp and resp.text)
 
         elif provider == "google":
-            os.environ["GOOGLE_API_KEY"] = key
             from llama_index.llms.google_genai import GoogleGenAI
-            llm = GoogleGenAI(model="gemini-2.5-flash")
+            llm = GoogleGenAI(model="gemini-2.5-flash", api_key=key)
             resp = llm.complete("Say OK")
             return bool(resp and resp.text)
 
