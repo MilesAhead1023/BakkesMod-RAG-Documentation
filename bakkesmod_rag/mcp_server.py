@@ -156,7 +156,10 @@ async def main():
                     "List all BakkesMod SDK classes with their categories "
                     "and method counts. Analyzes SDK header files in "
                     "docs_bakkesmod_only/ to extract C++ classes, their "
-                    "inheritance hierarchy, and method counts."
+                    "inheritance hierarchy, and method counts. Note: Full "
+                    "method signatures require tree-sitter-language-pack "
+                    "to be installed; falls back to regex extraction "
+                    "automatically otherwise."
                 ),
                 inputSchema={
                     "type": "object",
@@ -167,7 +170,10 @@ async def main():
                 name="get_sdk_class_details",
                 description=(
                     "Get full method signatures, inheritance chain, and "
-                    "related types for a specific BakkesMod SDK class."
+                    "related types for a specific BakkesMod SDK class. "
+                    "Note: Full method signatures require "
+                    "tree-sitter-language-pack to be installed; falls "
+                    "back to regex extraction automatically otherwise."
                 ),
                 inputSchema={
                     "type": "object",
