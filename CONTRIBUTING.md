@@ -138,10 +138,10 @@ Fixes #123
 
 ### Running Tests
 
-First, install test dependencies:
+Install core + development dependencies:
 
 ```bash
-pip install pytest pytest-asyncio
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 Run all tests before submitting a pull request:

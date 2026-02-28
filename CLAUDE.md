@@ -30,8 +30,14 @@ python -m bakkesmod_rag.evaluator
 # Start MCP server for Claude Code integration
 python -m bakkesmod_rag.mcp_server
 
-# Install dependencies
+# Install core dependencies
 pip install -r requirements.txt
+
+# Install with dev/testing tools
+pip install -r requirements.txt -r requirements-dev.txt
+
+# Install optional features (observability, evaluation, API server, etc.)
+pip install -r requirements-optional.txt
 
 # Docker deployment
 docker-compose up -d
