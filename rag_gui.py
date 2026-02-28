@@ -33,10 +33,37 @@ root_logger.info(f"BakkesMod RAG GUI started at {datetime.now()}")
 root_logger.info(f"Log file: {log_file.absolute()}")
 root_logger.info("=" * 80)
 
+# Patch Gradio's problematic code generation for PyInstaller bundles
+# Must patch BEFORE gradio imports itself
+import sys
+_is_bundled = getattr(sys, 'frozen', False)
+
+if _is_bundled:
+    # Patch pathlib.Path.read_text to prevent reading missing files
+    from pathlib import Path as PathlibPath
+    _original_read_text = PathlibPath.read_text
+
+    def _patched_read_text(self, *args, **kwargs):
+        """Block reads of missing .py/.pyi files"""
+        try:
+            path_str = str(self)
+            # If trying to read a gradio source file that doesn't exist, return empty string
+            if 'gradio' in path_str and ('.py' in path_str or '.pyi' in path_str):
+                if not self.exists():
+                    root_logger.debug(f"Blocked read of missing file: {path_str}")
+                    return ""  # Return empty string instead of raising
+        except:
+            pass
+        return _original_read_text(self, *args, **kwargs)
+
+    PathlibPath.read_text = _patched_read_text
+    root_logger.info("Installed file read patch for bundled environment")
+
 try:
     import gradio as gr
-except ImportError:
-    print("ERROR: Gradio not installed.  Run:  pip install gradio")
+except ImportError as e:
+    print(f"ERROR: Gradio not installed: {e}")
+    root_logger.error(f"Gradio import failed: {e}")
     sys.exit(1)
 
 

@@ -374,7 +374,7 @@ For better performance:
 
 1. Check cost report:
    ```python
-   from cost_tracker import get_tracker
+   from bakkesmod_rag.cost_tracker import get_tracker
    print(get_tracker().get_report())
    ```
 

@@ -18,12 +18,6 @@ python rag_gui.py
 # Run all tests
 pytest -v
 
-# Run a specific test file
-pytest test_smoke.py -v
-
-# Build KG index separately using OpenAI (faster than free tier)
-python build_kg_openai.py
-
 # Run comprehensive builder with incremental KG checkpointing
 python -m bakkesmod_rag.comprehensive_builder
 
@@ -69,8 +63,8 @@ bakkesmod_rag/
   mcp_server.py          # MCP server for Claude Code IDE integration
   comprehensive_builder.py  # Full index builder with incremental KG checkpoints
 
-interactive_rag.py       # CLI entry point — thin wrapper (~260 lines)
-rag_gui.py               # GUI entry point — thin wrapper (~500 lines)
+interactive_rag.py       # CLI entry point — thin wrapper (288 lines)
+rag_gui.py               # GUI entry point — thin wrapper (1174 lines)
 ```
 
 ### LLM Fallback Chain
@@ -125,7 +119,15 @@ Results are fused via reciprocal rank fusion with 4 query variants, then optiona
 | `bakkesmod_rag/evaluator.py` | RAG quality evaluation with golden test queries |
 | `bakkesmod_rag/mcp_server.py` | MCP server for Claude Code IDE integration |
 | `bakkesmod_rag/comprehensive_builder.py` | Full index build with incremental KG checkpointing |
-| `build_kg_openai.py` | Standalone KG builder using GPT-4o-mini |
+| `bakkesmod_rag/answer_verifier.py` | Answer verification and fact-checking logic |
+| `bakkesmod_rag/api.py` | HTTP REST API endpoints and request handling |
+| `bakkesmod_rag/compiler.py` | C++ plugin code compilation and validation |
+| `bakkesmod_rag/cpp_analyzer.py` | C++ code analysis and semantic extraction |
+| `bakkesmod_rag/feedback_store.py` | User feedback persistence and retrieval |
+| `bakkesmod_rag/guardrails.py` | Content safety and policy enforcement |
+| `bakkesmod_rag/intent_router.py` | Query intent classification and routing |
+| `bakkesmod_rag/query_decomposer.py` | Complex query decomposition into sub-queries |
+| `bakkesmod_rag/setup_keys.py` | API key setup and environment configuration |
 
 ## Key Patterns
 

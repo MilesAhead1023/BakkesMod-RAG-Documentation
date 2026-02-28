@@ -68,7 +68,7 @@ python interactive_rag.py
 
 **Windows executable (no Python required):**
 
-Download `BakkesMod_RAG_GUI.zip` from [Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases), or build with `build_exe.bat`.
+Download `BakkesMod_RAG_GUI.zip` from [Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases).
 
 **From source:**
 

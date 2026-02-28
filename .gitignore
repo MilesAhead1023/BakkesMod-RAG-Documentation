@@ -5,6 +5,8 @@ venv/
 env/
 ENV/
 .venv
+venv312/
+venv_build/
 
 # Python cache
 __pycache__/
@@ -55,6 +57,7 @@ storage/
 
 # Logs
 *.log
+build_output.log
 logs/
 
 # Environment variables

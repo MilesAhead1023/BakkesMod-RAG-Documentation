@@ -147,14 +147,14 @@ pip install pytest pytest-asyncio
 Run all tests before submitting a pull request:
 
 ```bash
-# Run smoke tests
-pytest test_smoke.py -v
+# Run all tests
+pytest tests/ -v
 
-# Run integration tests
-pytest test_rag_integration.py -v
+# Run tests in a specific file
+pytest tests/test_cache.py -v
 
 # Run specific test
-pytest test_smoke.py::test_query_with_cache -v
+pytest tests/test_cache.py::test_cache_hit -v
 ```
 
 ### Writing Tests
@@ -176,7 +176,7 @@ pytest test_smoke.py::test_query_with_cache -v
 
 2. **Run all tests**:
    ```bash
-   pytest test_smoke.py test_rag_integration.py -v
+   pytest tests/ -v
    ```
 
 3. **Check code style**:

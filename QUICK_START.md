@@ -35,17 +35,17 @@ Commands:
 
 ### Option 2: Run Test Suite
 ```bash
-python test_comprehensive.py
+pytest tests/ -v
 ```
 
-Runs 5 predefined test queries and shows results.
+Runs all unit and integration tests.
 
-### Option 3: Verbose Single Query
+### Option 3: Run Specific Test
 ```bash
-python test_rag_verbose.py
+pytest tests/test_cache.py -v
 ```
 
-Shows detailed logging of every step for debugging.
+Shows detailed output for a specific test module.
 
 ---
 
