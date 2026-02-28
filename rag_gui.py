@@ -24,6 +24,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Setup centralized file logging BEFORE any other imports
+from bakkesmod_rag.observability import setup_file_logging
+log_file = setup_file_logging()
+root_logger = logging.getLogger("bakkesmod_rag")
+root_logger.info("=" * 80)
+root_logger.info(f"BakkesMod RAG GUI started at {datetime.now()}")
+root_logger.info(f"Log file: {log_file.absolute()}")
+root_logger.info("=" * 80)
+
 try:
     import gradio as gr
 except ImportError:
@@ -136,6 +145,7 @@ _root_logger = logging.getLogger("bakkesmod_rag")
 _root_logger.setLevel(logging.DEBUG)
 _root_logger.addHandler(_gui_log_handler)
 _root_logger.propagate = False  # prevent duplicate logs reaching root logger
+# Note: file handler is already added by setup_file_logging()
 
 
 # ---------------------------------------------------------------------------
@@ -1112,13 +1122,16 @@ def main():
     print("=" * 70)
     print("  BakkesMod RAG — GUI Application")
     print("=" * 70)
+    print(f"\nLogs: {log_file.absolute()}")
+    print("=" * 70)
 
     demo = create_gui()
 
     print("\n" + "=" * 70)
     print("  GUI Ready!  Opening browser...")
     print("=" * 70)
-    print("\nPress Ctrl+C to stop.\n")
+    print("\nPress Ctrl+C to stop.")
+    print(f"Real-time logs: {log_file.absolute()}\n")
 
     demo.launch(
         server_name="0.0.0.0",

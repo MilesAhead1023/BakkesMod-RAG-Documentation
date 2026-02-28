@@ -12,6 +12,8 @@ is a no-op stub — no errors, no warnings, just silent pass-through.
 import logging
 import json
 import sys
+from pathlib import Path
+from logging.handlers import RotatingFileHandler
 from contextlib import contextmanager
 from typing import Optional, Dict
 from datetime import datetime
@@ -42,6 +44,63 @@ class JsonFormatter(logging.Formatter):
                 log_data[key] = value
 
         return json.dumps(log_data, default=str)
+
+
+def setup_file_logging(
+    log_dir: str = "./logs",
+    log_name: str = "bakkesmod_rag.log",
+    max_bytes: int = 10_000_000,  # 10 MB
+    backup_count: int = 5,
+) -> Path:
+    """Setup centralized file logging for all RAG operations.
+
+    Args:
+        log_dir: Directory to store logs (created if doesn't exist).
+        log_name: Name of the log file.
+        max_bytes: Max size before rotation (default 10 MB).
+        backup_count: Number of backup files to keep (default 5).
+
+    Returns:
+        Path to the log file.
+    """
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+
+    log_file = log_path / log_name
+
+    # Create rotating file handler
+    handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding='utf-8'
+    )
+
+    # Format: timestamp | level | logger | message
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handler.setFormatter(formatter)
+
+    # Add to bakkesmod_rag root logger
+    root_logger = logging.getLogger("bakkesmod_rag")
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.DEBUG)
+
+    # Also capture uncaught exceptions
+    def log_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        root_logger.critical(
+            "Uncaught exception",
+            exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
+    sys.excepthook = log_exception
+
+    return log_file
 
 
 class StructuredLogger:

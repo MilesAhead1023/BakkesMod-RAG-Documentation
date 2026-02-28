@@ -19,9 +19,17 @@ from llama_index.core import (
 from llama_index.core.indices.knowledge_graph import KnowledgeGraphIndex
 from llama_index.core.schema import BaseNode
 from llama_index.core.base.base_retriever import BaseRetriever
-from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
+
+# BM25Retriever import with fallback
+try:
+    from llama_index.retrievers.bm25 import BM25Retriever
+except (ImportError, ModuleNotFoundError):
+    try:
+        from llama_index.legacy.retrievers.bm25 import BM25Retriever
+    except (ImportError, ModuleNotFoundError):
+        BM25Retriever = None
 
 from bakkesmod_rag.config import RAGConfig
 
@@ -145,20 +153,31 @@ def create_fusion_retriever(
             vector_retriever, indexes["vector"].storage_context, config
         )
 
-    bm25_retriever = BM25Retriever.from_defaults(
-        nodes=nodes, similarity_top_k=config.retriever.bm25_top_k
-    )
+    # BM25 retriever (optional, may not be available in all installations)
+    retrievers: List[BaseRetriever] = [vector_retriever]
 
-    retrievers: List[BaseRetriever] = [vector_retriever, bm25_retriever]
+    if BM25Retriever is not None:
+        bm25_retriever = BM25Retriever.from_defaults(
+            nodes=nodes, similarity_top_k=config.retriever.bm25_top_k
+        )
+        retrievers.append(bm25_retriever)
+    else:
+        logger.warning("BM25Retriever not available; using vector search only")
 
     if "kg" in indexes:
         kg_retriever = indexes["kg"].as_retriever(
             similarity_top_k=config.retriever.kg_similarity_top_k
         )
         retrievers.append(kg_retriever)
-        mode_label = "3-way fusion (Vector+BM25+KG)"
+        if BM25Retriever is not None:
+            mode_label = "3-way fusion (Vector+BM25+KG)"
+        else:
+            mode_label = "2-way fusion (Vector+KG)"
     else:
-        mode_label = "2-way fusion (Vector+BM25)"
+        if BM25Retriever is not None:
+            mode_label = "2-way fusion (Vector+BM25)"
+        else:
+            mode_label = "Vector search only"
 
     # Optional ColBERT 4th retriever
     if config.retriever.use_colbert and "colbert" in indexes:
