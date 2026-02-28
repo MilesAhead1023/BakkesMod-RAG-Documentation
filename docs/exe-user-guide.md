@@ -1,17 +1,17 @@
-# BakkesMod RAG GUI - Executable User Guide
+# BakkesMod RAG - Executable User Guide
 
 ## Overview
 
-The BakkesMod RAG GUI is available as a **standalone Windows executable** that bundles all dependencies into a single distributable package. No Python installation required!
+The BakkesMod RAG app is available as a **standalone Windows executable** built with NiceGUI. It opens as a native desktop window with 7 tabs (Query, Code Gen, Settings, and more). No Python installation or browser required!
 
 ## Quick Start
 
 ### For End Users (Using the Pre-built Executable)
 
 1. **Download the executable package**
-   - Extract the `BakkesMod_RAG_GUI` folder to your desired location
+   - Extract the `BakkesModRAG` folder to your desired location
    - The folder should contain:
-     - `BakkesMod_RAG_GUI.exe` - The main application
+     - `BakkesModRAG.exe` - The main application
      - `docs/` - Documentation files
      - `docs_bakkesmod_only/` - BakkesMod SDK documentation
      - `templates/` - Code generation templates
@@ -32,13 +32,12 @@ The BakkesMod RAG GUI is available as a **standalone Windows executable** that b
    - **Required**: You need all three API keys for full functionality
 
 3. **Run the Application**
-   - Double-click `BakkesMod_RAG_GUI.exe`
+   - Double-click `BakkesModRAG.exe`
    - Or run from Command Prompt:
      ```cmd
-     BakkesMod_RAG_GUI.exe
+     BakkesModRAG.exe
      ```
-   - A console window will open showing startup progress
-   - Your web browser will automatically open to `http://localhost:7860`
+   - A native desktop window will open with the application UI
 
 4. **First Run**
    - The first time you run, the application will:
@@ -82,7 +81,7 @@ The BakkesMod RAG GUI is available as a **standalone Windows executable** that b
 
 3. **Find your executable:**
    ```
-   dist/BakkesMod_RAG_GUI/BakkesMod_RAG_GUI.exe
+   dist/BakkesModRAG/BakkesModRAG.exe
    ```
 
 #### Method 2: Manual Build
@@ -101,30 +100,30 @@ The BakkesMod RAG GUI is available as a **standalone Windows executable** that b
 
 3. **Build the executable:**
    ```cmd
-   python build_exe.py
+   pyinstaller --clean --noconfirm nicegui_app.spec
    ```
 
-   Or use PyInstaller directly:
+   Or run in development mode (no build needed):
    ```cmd
-   pyinstaller --clean --noconfirm bakkesmod_rag_gui.spec
+   python nicegui_app.py
    ```
 
 ### Build Configuration
 
-The build is configured in `bakkesmod_rag_gui.spec`:
+The build is configured in `nicegui_app.spec`:
 
-- **Entry point**: `rag_gui.py`
+- **Entry point**: `nicegui_app.py`
 - **Included data**:
   - `docs/` - Main documentation
   - `docs_bakkesmod_only/` - BakkesMod SDK docs
   - `templates/` - Code generation templates
   - `.env.example` - Configuration template
-- **Hidden imports**: All LlamaIndex, Gradio, and LLM provider modules
-- **Output**: `dist/BakkesMod_RAG_GUI/`
+- **Hidden imports**: All LlamaIndex, NiceGUI, and LLM provider modules
+- **Output**: `dist/BakkesModRAG/` (COLLECT/directory mode)
 
 ### Customizing the Build
 
-Edit `bakkesmod_rag_gui.spec` to customize:
+Edit `nicegui_app.spec` to customize:
 
 ```python
 # Add an icon
@@ -141,11 +140,11 @@ version='version_info.txt'
 
 ### Package Contents
 
-The `dist/BakkesMod_RAG_GUI/` folder contains everything needed:
+The `dist/BakkesModRAG/` folder contains everything needed:
 
 ```
-BakkesMod_RAG_GUI/
-├── BakkesMod_RAG_GUI.exe    # Main executable (~50-100MB)
+BakkesModRAG/
+├── BakkesModRAG.exe          # Main executable (~50-100MB)
 ├── docs/                     # Documentation files
 ├── docs_bakkesmod_only/      # BakkesMod SDK documentation
 ├── templates/                # Code generation templates
@@ -165,12 +164,12 @@ BakkesMod_RAG_GUI/
 
 2. **Copy the distribution folder:**
    ```cmd
-   xcopy /E /I dist\BakkesMod_RAG_GUI BakkesMod_RAG_GUI_v1.0
+   xcopy /E /I dist\BakkesModRAG BakkesModRAG_v1.0
    ```
 
 3. **Create a README:**
    ```cmd
-   copy dist\BakkesMod_RAG_GUI\README.txt BakkesMod_RAG_GUI_v1.0\
+   copy dist\BakkesModRAG\README.txt BakkesModRAG_v1.0\
    ```
 
 4. **Zip the folder:**
@@ -191,10 +190,10 @@ BakkesMod_RAG_GUI/
 **Solution**:
 - Run from Command Prompt to see error messages:
   ```cmd
-  cd path\to\BakkesMod_RAG_GUI
-  BakkesMod_RAG_GUI.exe
+  cd path\to\BakkesModRAG
+  BakkesModRAG.exe
   ```
-- Check for error messages in the console
+- Check for error messages in the console window
 
 ### Missing API Keys
 
@@ -219,17 +218,14 @@ BakkesMod_RAG_GUI/
 - Subsequent runs will be much faster (~30 seconds)
 - The `rag_storage/` folder caches the index
 
-### Browser Doesn't Open
+### Window Doesn't Appear
 
-**Issue**: Console shows "Running on http://localhost:7860" but browser doesn't open
+**Issue**: Console opens but no application window appears
 
 **Solution**:
-- Manually open a browser and go to `http://localhost:7860`
-- Check if port 7860 is already in use:
-  ```cmd
-  netstat -ano | findstr :7860
-  ```
-- If needed, kill the process or use a different port
+- Wait a moment for the native window to initialize
+- Check the console for error messages
+- Ensure `.env` file is properly configured
 
 ### "Import Error" or "Module Not Found"
 
@@ -239,7 +235,7 @@ BakkesMod_RAG_GUI/
 - The exe should be self-contained
 - If this happens, rebuild with:
   ```cmd
-  python build_exe.py
+  pyinstaller --clean --noconfirm nicegui_app.spec
   ```
 - Check that all required data directories are present
 
@@ -293,9 +289,9 @@ LOG_LEVEL=INFO
 # Optional: Storage Location
 RAG_STORAGE_DIR=./custom_storage
 
-# Optional: Server Configuration
-GRADIO_SERVER_PORT=7860
-GRADIO_SERVER_NAME=0.0.0.0
+# Optional: Server Configuration (for Gradio/Docker only)
+# GRADIO_SERVER_PORT=7860
+# GRADIO_SERVER_NAME=0.0.0.0
 ```
 
 ### Command Line Options
@@ -329,7 +325,7 @@ Some antivirus software may flag PyInstaller executables:
 ### Updating the Executable
 
 1. Download the latest version
-2. Replace the old `BakkesMod_RAG_GUI.exe`
+2. Replace the old `BakkesModRAG.exe`
 3. Keep your `.env` file and `rag_storage/` folder
 4. Restart the application
 
@@ -375,7 +371,7 @@ This software is licensed under the MIT License. See the repository for full lic
 ## Credits
 
 - **BakkesMod**: Rocket League mod framework
-- **Gradio**: Web UI framework
+- **NiceGUI**: Native desktop UI framework
 - **LlamaIndex**: RAG framework
 - **PyInstaller**: Python to executable converter
 

@@ -21,9 +21,6 @@
 #
 # C++ syntax analysis (tree-sitter AST, optional — falls back to regex):
 #   pip install tree-sitter-language-pack
-#
-# MCP server (Claude Code IDE integration):
-#   pip install mcp
 
 # Observability & monitoring
 arize-phoenix>=4.0.0
@@ -55,6 +52,3 @@ cohere>=5.0.0
 
 # C++ syntax analysis (tree-sitter AST, optional — falls back to regex)
 tree-sitter-language-pack>=0.6.0
-
-# MCP server (Claude Code IDE integration)
-mcp>=0.1.0

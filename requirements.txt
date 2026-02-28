@@ -17,12 +17,18 @@ llama-index-llms-google-genai>=0.1.0
 llama-index-llms-anthropic>=0.1.0
 llama-index-llms-openai>=0.1.0
 llama-index-llms-openrouter>=0.4.0
+llama-index-llms-ollama>=0.1.0
 google-genai>=1.33.0
 anthropic>=0.25.0
 openai>=1.0.0
 
 # GUI
 gradio>=4.0.0
+nicegui>=2.0.0
+pywebview>=5.0
+
+# MCP server (Claude Code IDE integration)
+mcp>=1.0.0
 
 # Utilities
 numpy>=1.24.0

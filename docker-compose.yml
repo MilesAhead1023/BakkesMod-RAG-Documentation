@@ -1,35 +1,55 @@
-version: '3.8'
-
 services:
-  # ---------------------------------------------------------------------------
-  # Redis — shared state for semantic cache, circuit breakers, cost counters
-  # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: bakkesmod-redis
+  gui:
+    build: .
+    command: python rag_gui.py
     ports:
-      - "6379:6379"
+      - "7860:7860"
+    env_file: .env
+    volumes:
+      - ./docs_bakkesmod_only:/app/docs_bakkesmod_only:ro
+      - ./templates:/app/templates:ro
+      - rag_storage:/app/rag_storage
+      - logs:/app/logs
     restart: unless-stopped
     networks:
       - rag-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
 
-  # ---------------------------------------------------------------------------
-  # RAG workers (2 replicas, load-balanced via nginx)
-  # ---------------------------------------------------------------------------
+  # NOTE: The MCP server uses stdio transport and is designed for local developer use.
+  # In Docker, this service idles without a connected Claude Code process.
+  # For Claude Code integration, run: python -m bakkesmod_rag.mcp_server locally instead.
+  mcp-server:
+    build: .
+    command: python -m bakkesmod_rag.mcp_server
+    env_file: .env
+    volumes:
+      - ./docs_bakkesmod_only:/app/docs_bakkesmod_only:ro
+      - ./templates:/app/templates:ro
+      - rag_storage:/app/rag_storage
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    networks:
+      - rag-network
+
+  redis:
+    image: redis:7-alpine
+    profiles: [production]
+    restart: unless-stopped
+    networks:
+      - rag-network
+
   rag-worker:
     build: .
     command: uvicorn bakkesmod_rag.api:app --host 0.0.0.0 --port 8080
+    profiles: [production]
+    env_file: .env
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_BACKEND=redis
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -37,85 +57,28 @@ services:
       - ./templates:/app/templates:ro
       - rag_storage:/app/rag_storage
       - logs:/app/logs
-      - ./.cache:/app/.cache
-    deploy:
-      replicas: 2
-    restart: unless-stopped
-    networks:
-      - rag-network
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 10s
+      start_period: 120s
       retries: 3
+    networks:
+      - rag-network
 
-  # ---------------------------------------------------------------------------
-  # Nginx load balancer
-  # ---------------------------------------------------------------------------
   nginx:
     image: nginx:alpine
-    container_name: bakkesmod-nginx
+    profiles: [production]
     ports:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    restart: unless-stopped
-    networks:
-      - rag-network
     depends_on:
       - rag-worker
-
-  # ---------------------------------------------------------------------------
-  # Legacy single-process system (kept for backward compatibility)
-  # ---------------------------------------------------------------------------
-  rag-system:
-    build: .
-    container_name: bakkesmod-rag-2026
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    ports:
-      - "6006:6006"  # Phoenix UI
-      - "8000:8000"  # Prometheus metrics
-    volumes:
-      - ./docs_bakkesmod_only:/app/docs_bakkesmod_only:ro
-      - ./templates:/app/templates:ro
-      - rag_storage:/app/rag_storage
-      - logs:/app/logs
-      - ./.cache:/app/.cache
-    restart: unless-stopped
     networks:
       - rag-network
-    profiles:
-      - legacy  # only starts with: docker-compose --profile legacy up
-
-  # ---------------------------------------------------------------------------
-  # MCP server for Claude Code IDE integration
-  # ---------------------------------------------------------------------------
-  mcp-server:
-    build: .
-    container_name: bakkesmod-mcp-server
-    command: python -m bakkesmod_rag.mcp_server
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - REDIS_URL=redis://redis:6379
-    volumes:
-      - ./docs_bakkesmod_only:/app/docs_bakkesmod_only:ro
-      - ./templates:/app/templates:ro
-      - rag_storage:/app/rag_storage
-      - logs:/app/logs
-    restart: unless-stopped
-    networks:
-      - rag-network
-    depends_on:
-      - redis
 
 networks:
   rag-network:

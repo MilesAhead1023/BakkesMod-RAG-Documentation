@@ -20,8 +20,8 @@ This single command will:
 After building, you'll find:
 
 ```
-dist/BakkesMod_RAG_GUI/
-├── BakkesMod_RAG_GUI.exe    ← Main executable
+dist/BakkesModRAG/
+├── BakkesModRAG.exe          ← Main executable
 ├── docs/                     ← Documentation files
 ├── docs_bakkesmod_only/      ← BakkesMod SDK docs
 ├── templates/                ← Code templates
@@ -43,11 +43,11 @@ venv\Scripts\activate
 pip install -r requirements.txt
 pip install pyinstaller
 
-# 3. Run build script
-python build_exe.py
+# 3. Build the executable
+pyinstaller --clean --noconfirm nicegui_app.spec
 
-# Or use PyInstaller directly
-pyinstaller --clean --noconfirm bakkesmod_rag_gui.spec
+# Or run in development mode (no build needed)
+python nicegui_app.py
 ```
 
 ## Distribution
@@ -60,7 +60,7 @@ To create a distributable package:
    cd dist
    
    # Create zip (using PowerShell)
-   Compress-Archive -Path BakkesMod_RAG_GUI -DestinationPath BakkesMod_RAG_GUI_v1.0.zip
+   Compress-Archive -Path BakkesModRAG -DestinationPath BakkesModRAG_v1.0.zip
    ```
 
 2. **Upload to GitHub Releases:**
@@ -69,14 +69,16 @@ To create a distributable package:
    - Upload the zip file
    - Add release notes
 
+> **Note:** The output is a COLLECT/directory mode build (`dist/BakkesModRAG/`), not a single-file exe.
+
 ## Testing the Executable
 
 Before distributing:
 
 1. **Copy to a test location:**
    ```cmd
-   xcopy /E /I dist\BakkesMod_RAG_GUI C:\Test\BakkesMod_RAG_GUI
-   cd C:\Test\BakkesMod_RAG_GUI
+   xcopy /E /I dist\BakkesModRAG C:\Test\BakkesModRAG
+   cd C:\Test\BakkesModRAG
    ```
 
 2. **Create .env file:**
@@ -88,19 +90,18 @@ Before distributing:
 
 3. **Run the executable:**
    ```cmd
-   BakkesMod_RAG_GUI.exe
+   BakkesModRAG.exe
    ```
 
 4. **Verify:**
    - Console window opens showing startup
-   - Web browser opens to http://localhost:7860
-   - GUI loads successfully
+   - Native desktop window appears with the application UI
    - Can query documentation
    - Can generate code
 
 ## Build Configuration
 
-Edit `bakkesmod_rag_gui.spec` to customize:
+Edit `nicegui_app.spec` to customize:
 
 ### Add an Icon
 
@@ -145,7 +146,7 @@ hiddenimports += ['missing_module_name']
 
 The executable will be large (~200-500 MB) because it includes:
 - Python runtime
-- All dependencies (Gradio, LlamaIndex, LLM providers)
+- All dependencies (NiceGUI, LlamaIndex, LLM providers)
 - Documentation files
 
 To reduce size:
@@ -170,7 +171,7 @@ This is a common false positive with PyInstaller executables:
 To sign the executable (requires certificate):
 
 ```cmd
-signtool sign /f certificate.pfx /p password /t http://timestamp.digicert.com dist\BakkesMod_RAG_GUI\BakkesMod_RAG_GUI.exe
+signtool sign /f certificate.pfx /p password /t http://timestamp.digicert.com "dist\BakkesModRAG\BakkesModRAG.exe"
 ```
 
 ## Requirements

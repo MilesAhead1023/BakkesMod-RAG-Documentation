@@ -9,10 +9,16 @@ RAG system for BakkesMod SDK documentation using LlamaIndex. Provides an interac
 ## Commands
 
 ```bash
+# Run the NiceGUI desktop app (native exe)
+python nicegui_app.py
+
+# Build the native exe (PyInstaller)
+pyinstaller --clean --noconfirm nicegui_app.spec
+
 # Run the interactive RAG system (CLI)
 python interactive_rag.py
 
-# Run the GUI (Gradio web interface)
+# Run the Gradio web GUI (used by Docker)
 python rag_gui.py
 
 # Run all tests
@@ -47,7 +53,7 @@ docker-compose up -d
 
 ### Unified Package: `bakkesmod_rag/`
 
-All RAG logic lives in the `bakkesmod_rag/` package. The two entry points (`interactive_rag.py` and `rag_gui.py`) are thin wrappers that handle I/O while delegating to `RAGEngine`.
+All RAG logic lives in the `bakkesmod_rag/` package. The entry points (`nicegui_app.py`, `interactive_rag.py`, and `rag_gui.py`) are thin wrappers that handle I/O while delegating to `RAGEngine`.
 
 ```
 bakkesmod_rag/
@@ -69,19 +75,23 @@ bakkesmod_rag/
   mcp_server.py          # MCP server for Claude Code IDE integration
   comprehensive_builder.py  # Full index builder with incremental KG checkpoints
 
+nicegui_app.py           # Native desktop app (NiceGUI, 7 tabs)
+nicegui_app.spec         # PyInstaller spec for building native exe
 interactive_rag.py       # CLI entry point — thin wrapper (288 lines)
-rag_gui.py               # GUI entry point — thin wrapper (1174 lines)
+rag_gui.py               # Gradio web GUI — used by Docker (1174 lines)
 ```
 
 ### LLM Fallback Chain
 
 Defined once in `bakkesmod_rag/llm_provider.py`. Priority order, each verified with a live `"Say OK"` test call at startup:
-1. Anthropic Claude Sonnet (premium)
-2. OpenRouter / DeepSeek V3 (FREE)
-3. Google Gemini 2.5 Flash (FREE)
-4. OpenAI GPT-4o-mini (cheap)
+1. Anthropic Claude Sonnet (`ANTHROPIC_API_KEY`) -- premium
+2. OpenAI GPT-4o (`OPENAI_API_KEY`) -- best non-Anthropic quality
+3. Google Gemini 2.5 Pro (`GOOGLE_API_KEY`) -- high quality paid
+4. OpenRouter / DeepSeek V3 (`OPENROUTER_API_KEY`) -- FREE
+5. Google Gemini 2.5 Flash (`GOOGLE_API_KEY`) -- FREE tier, fast
+6. Ollama local model -- auto-detected, no config, works offline
 
-If one provider's credits are exhausted, the system automatically falls through to the next.
+If one provider's credits are exhausted or unavailable, the system automatically falls through to the next.
 
 ### 3-Way Fusion Retrieval
 

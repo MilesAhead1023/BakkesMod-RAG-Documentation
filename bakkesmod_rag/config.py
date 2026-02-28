@@ -37,12 +37,13 @@ class LLMConfig(BaseModel):
     primary_provider: Literal["openai", "anthropic", "gemini", "openrouter"] = "gemini"
     primary_model: str = "gemini-2.5-flash"
 
-    fallback_providers: list[Literal["openai", "anthropic", "gemini", "openrouter"]] = [
+    fallback_providers: list[Literal["openai", "anthropic", "gemini", "openrouter", "ollama"]] = [
         "openai", "openrouter", "anthropic"
     ]
     fallback_models: dict[str, str] = {
         "openrouter": "deepseek/deepseek-chat-v3-0324",
         "gemini": "gemini-2.5-flash",
+        "gemini_pro": "gemini-2.5-pro",
         "openai": "gpt-4o-mini",
         "anthropic": "claude-sonnet-4-5",
     }

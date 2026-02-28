@@ -14,8 +14,10 @@
 - `pip install -r requirements-optional.txt`: install optional features (observability, evaluation, API server).
 - `python -m bakkesmod_rag.sentinel`: validate environment/API key setup.
 - `python -m bakkesmod_rag.comprehensive_builder`: build or refresh local RAG indices in `rag_storage/`.
+- `python nicegui_app.py`: run native desktop app (NiceGUI).
+- `pyinstaller --clean --noconfirm nicegui_app.spec`: build the standalone Windows executable (output: `dist/BakkesModRAG/`).
 - `python interactive_rag.py`: run CLI interface.
-- `python rag_gui.py`: run local web GUI.
+- `python rag_gui.py`: run Gradio web GUI (used by Docker).
 - `pytest -m "not integration" -v`: run fast tests (no API keys needed).
 - `pytest -v` or `pytest tests/test_cache.py -v`: run all tests (including integration) or a targeted module.
 

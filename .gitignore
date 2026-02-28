@@ -34,7 +34,7 @@ wheels/
 
 # PyInstaller
 *.manifest
-# Note: bakkesmod_rag_gui.spec is tracked for executable builds
+# Note: nicegui_app.spec is tracked for executable builds
 
 # Unit test / coverage
 .pytest_cache/
@@ -100,3 +100,6 @@ generated_plugins/
 sqlite.db
 test_results.txt
 test_results_runnable.txt
+
+# Git worktrees
+.worktrees/
