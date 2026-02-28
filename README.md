@@ -78,7 +78,7 @@ python rag_gui.py          # opens at http://localhost:7860
 
 Features: documentation Q&A, plugin code generation, session statistics, code export, confidence scores, source citations.
 
-See [GUI_USER_GUIDE.md](GUI_USER_GUIDE.md) and [EXE_USER_GUIDE.md](EXE_USER_GUIDE.md).
+See [GUI User Guide](docs/gui-user-guide.md) and [EXE User Guide](docs/exe-user-guide.md).
 
 ## Architecture
 
@@ -145,7 +145,7 @@ Unit tests use mocks from `tests/conftest.py` and don't require API keys.
 - [Architecture](CLAUDE.md) — System design and architecture overview
 - [Code Generation Guide](docs/CODE_GENERATION_GUIDE.md) — Plugin code gen docs
 - [BakkesMod SDK Guides](docs/bakkesmod-sdk-guides.md) — SDK guides and reference
-- [Deployment Guide](DEPLOYMENT_GUIDE.md) — Docker and production deployment
+- [Deployment Guide](docs/deployment-guide.md) — Docker and production deployment
 
 ## AI Agent Integration
 

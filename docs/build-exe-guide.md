@@ -183,7 +183,7 @@ signtool sign /f certificate.pfx /p password /t http://timestamp.digicert.com di
 ## Support
 
 For issues with building the executable:
-- Check [EXE_USER_GUIDE.md](EXE_USER_GUIDE.md)
+- Check [exe-user-guide.md](exe-user-guide.md)
 - Open an issue on GitHub
 - Include build output and error messages
 
