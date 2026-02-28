@@ -86,7 +86,10 @@ def _is_google_auth_error(error: Exception) -> bool:
         True if the error indicates an authentication or API key problem.
     """
     msg = str(error).lower()
-    return any(keyword in msg for keyword in ("invalid", "unauthorized", "api key"))
+    return any(keyword in msg for keyword in (
+        "invalid", "unauthorized", "api key",
+        "permission", "403", "unauthenticated",
+    ))
 
 
 def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
@@ -169,6 +172,12 @@ def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
                 ),
             ))
         except Exception as e:
+            if _is_google_auth_error(e):
+                google_auth_failed = True
+                logger.info(
+                    "Google auth error during Gemini Pro init — "
+                    "will skip Gemini Flash"
+                )
             logger.warning("Could not initialize Gemini Pro: %s", e)
 
     # 4. OpenRouter / DeepSeek V3
@@ -190,7 +199,7 @@ def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
             logger.warning("Could not initialize OpenRouter: %s", e)
 
     # 5. Google Gemini 2.5 Flash (FREE tier)
-    if config.google_api_key:
+    if config.google_api_key and not google_auth_failed:
         try:
             from llama_index.llms.google_genai import GoogleGenAI
 
