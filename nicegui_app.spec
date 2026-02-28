@@ -1,5 +1,6 @@
 # nicegui_app.spec
 import os
+import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 datas = []
@@ -14,7 +15,7 @@ datas += [('.env.example', '.')]
 # Add google.generativeai data files if available
 try:
     datas += collect_data_files('google.generativeai')
-except Exception:
+except ModuleNotFoundError:
     pass
 
 hiddenimports = []
@@ -29,8 +30,10 @@ hiddenimports += [
     'tiktoken',
     'faiss',
     'pywebview',
-    'pywebview.platforms.winforms',
 ]
+
+if sys.platform == 'win32':
+    hiddenimports += ['pywebview.platforms.winforms']
 
 excludes = [
     'pytest',
@@ -73,6 +76,7 @@ exe = EXE(
 coll = COLLECT(
     exe,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
     upx=True,
