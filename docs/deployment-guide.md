@@ -136,7 +136,7 @@ LOG_LEVEL=INFO
 
 ### 3. Run System
 
-**Windows (using launch scripts):**
+**Windows (launches Gradio web GUI at localhost:7860):**
 ```cmd
 start_gui.bat
 ```
@@ -642,7 +642,7 @@ def estimate_cost(text, model="gpt-4"):
     # Cost per 1K tokens (example)
     cost_per_1k = {
         "gpt-4": 0.03,
-        "claude-3-5-sonnet": 0.015,
+        "claude-sonnet-4-5": 0.015,
         "text-embedding-3-small": 0.00002
     }
 
@@ -753,7 +753,7 @@ kill -9 <PID>
 
 3. Use faster models:
    ```python
-   llm.primary_model = "gemini-2.0-flash"  # Fastest
+   llm.primary_model = "gemini-2.5-flash"  # Fastest
    ```
 
 ### Circuit Breaker Open
@@ -888,7 +888,7 @@ python -m bakkesmod_rag.comprehensive_builder
 For **cost-optimized**:
 ```python
 embedding.model = "text-embedding-3-large"
-llm.primary_model = "claude-3-5-sonnet"
+llm.primary_model = "claude-sonnet-4-5"
 llm.kg_model = "gpt-4o-mini"
 cache.enabled = True
 cache.similarity_threshold = 0.9
@@ -897,8 +897,8 @@ cache.similarity_threshold = 0.9
 For **speed-optimized**:
 ```python
 embedding.model = "text-embedding-3-small"
-llm.primary_model = "gemini-2.0-flash"
-llm.kg_model = "gemini-2.0-flash"
+llm.primary_model = "gemini-2.5-flash"
+llm.kg_model = "gemini-2.5-flash"
 retriever.vector_top_k = 5
 retriever.rerank_top_n = 3
 ```
@@ -906,7 +906,7 @@ retriever.rerank_top_n = 3
 For **quality-optimized**:
 ```python
 embedding.model = "text-embedding-3-large"
-llm.primary_model = "claude-3-5-sonnet"
+llm.primary_model = "claude-sonnet-4-5"
 llm.kg_model = "gpt-4o"
 retriever.vector_top_k = 20
 retriever.rerank_top_n = 10
