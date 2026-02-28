@@ -144,8 +144,7 @@ Unit tests use mocks from `tests/conftest.py` and don't require API keys.
 - [Setup Guide](docs/rag-setup.md) — Installation and configuration
 - [Architecture](CLAUDE.md) — System design and architecture overview
 - [Code Generation Guide](docs/CODE_GENERATION_GUIDE.md) — Plugin code gen docs
-- [BakkesMod SDK Reference](docs/bakkesmod-sdk-reference.md) — SDK documentation
-- [ImGui Signatures](docs/bakkesmod_imgui_signatures_annotated.md) — UI framework reference
+- [BakkesMod SDK Guides](docs/bakkesmod-sdk-guides.md) — SDK guides and reference
 - [Deployment Guide](DEPLOYMENT_GUIDE.md) — Docker and production deployment
 
 ## AI Agent Integration
