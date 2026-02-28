@@ -23,6 +23,7 @@ Usage::
 import sys
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -35,12 +36,16 @@ server = None
 # Lazy-cached CppAnalyzer instance and class hierarchy
 _cpp_analyzer = None
 _sdk_classes: Optional[Dict] = None
+_sdk_classes_lock = threading.Lock()
 
 SDK_HEADER_DIR = "docs_bakkesmod_only"
 
 
 def _get_sdk_classes() -> Dict:
     """Lazily initialise CppAnalyzer and scan SDK headers once.
+
+    Thread-safe via double-checked locking so concurrent calls do not
+    trigger duplicate ``analyze_directory`` scans.
 
     Returns:
         Dict mapping class name to CppClassInfo.
@@ -51,20 +56,25 @@ def _get_sdk_classes() -> Dict:
     """
     global _cpp_analyzer, _sdk_classes
 
-    if _sdk_classes is not None:
+    if _sdk_classes is not None:  # fast path, no lock
         return _sdk_classes
 
-    sdk_path = Path(SDK_HEADER_DIR)
-    if not sdk_path.is_dir():
-        raise FileNotFoundError(
-            f"SDK header directory '{SDK_HEADER_DIR}/' not found. "
-            f"Ensure the BakkesMod documentation files are present."
-        )
+    with _sdk_classes_lock:  # slow path
+        if _sdk_classes is not None:  # double-checked locking
+            return _sdk_classes
 
-    from bakkesmod_rag.cpp_analyzer import CppAnalyzer
+        sdk_path = Path(SDK_HEADER_DIR)
+        if not sdk_path.is_dir():
+            raise FileNotFoundError(
+                f"SDK header directory '{SDK_HEADER_DIR}/' not found. "
+                f"Ensure the BakkesMod documentation files are present."
+            )
 
-    _cpp_analyzer = CppAnalyzer()
-    _sdk_classes = _cpp_analyzer.analyze_directory(SDK_HEADER_DIR)
+        from bakkesmod_rag.cpp_analyzer import CppAnalyzer
+
+        _cpp_analyzer = CppAnalyzer()
+        _sdk_classes = _cpp_analyzer.analyze_directory(SDK_HEADER_DIR)
+
     return _sdk_classes
 
 
@@ -336,10 +346,17 @@ async def main():
                     ),
                 )]
 
-            # Build inheritance chain
-            chain = _cpp_analyzer.build_inheritance_chain(
-                class_name, sdk_classes
-            )
+            # Build inheritance chain (guard against None analyzer)
+            try:
+                chain = _cpp_analyzer.build_inheritance_chain(
+                    class_name, sdk_classes
+                )
+            except Exception as e:
+                chain = []
+                logger.warning(
+                    "Could not build inheritance chain for %s: %s",
+                    class_name, e,
+                )
 
             lines = [f"Class: {cls.name}"]
             lines.append(f"File: {cls.file}")
