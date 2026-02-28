@@ -25,6 +25,9 @@ openai>=1.0.0
 # GUI
 gradio>=4.0.0
 
+# MCP server (Claude Code IDE integration)
+mcp>=1.0.0
+
 # Utilities
 numpy>=1.24.0
 pygments>=2.15.0

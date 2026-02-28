@@ -4,10 +4,12 @@ MCP Server for Claude Code Integration
 Exposes BakkesMod RAG as tools for Claude Code IDE via the Model
 Context Protocol (MCP).
 
-Provides two tools:
+Provides four tools:
 
 * ``query_bakkesmod_sdk`` -- Ask questions about the BakkesMod SDK
 * ``generate_plugin_code`` -- Generate C++ plugin code from a description
+* ``browse_sdk_classes`` -- List all SDK classes with categories and method counts
+* ``get_sdk_class_details`` -- Get full details for a specific SDK class
 
 Rewrite of the legacy ``mcp_rag_server.py`` using the unified
 ``bakkesmod_rag`` package.  The watchdog file-watcher dependency has
@@ -21,12 +23,49 @@ Usage::
 import sys
 import asyncio
 import logging
+from pathlib import Path
+from typing import Dict, Optional
 
 logger = logging.getLogger("bakkesmod_rag.mcp_server")
 
 # Global engine instance (initialised in main)
 engine = None
 server = None
+
+# Lazy-cached CppAnalyzer instance and class hierarchy
+_cpp_analyzer = None
+_sdk_classes: Optional[Dict] = None
+
+SDK_HEADER_DIR = "docs_bakkesmod_only"
+
+
+def _get_sdk_classes() -> Dict:
+    """Lazily initialise CppAnalyzer and scan SDK headers once.
+
+    Returns:
+        Dict mapping class name to CppClassInfo.
+
+    Raises:
+        FileNotFoundError: If the SDK header directory does not exist.
+        RuntimeError: If analysis fails for any reason.
+    """
+    global _cpp_analyzer, _sdk_classes
+
+    if _sdk_classes is not None:
+        return _sdk_classes
+
+    sdk_path = Path(SDK_HEADER_DIR)
+    if not sdk_path.is_dir():
+        raise FileNotFoundError(
+            f"SDK header directory '{SDK_HEADER_DIR}/' not found. "
+            f"Ensure the BakkesMod documentation files are present."
+        )
+
+    from bakkesmod_rag.cpp_analyzer import CppAnalyzer
+
+    _cpp_analyzer = CppAnalyzer()
+    _sdk_classes = _cpp_analyzer.analyze_directory(SDK_HEADER_DIR)
+    return _sdk_classes
 
 
 async def main():
@@ -111,6 +150,39 @@ async def main():
                     "required": ["description"],
                 },
             ),
+            types.Tool(
+                name="browse_sdk_classes",
+                description=(
+                    "List all BakkesMod SDK classes with their categories "
+                    "and method counts. Analyzes SDK header files in "
+                    "docs_bakkesmod_only/ to extract C++ classes, their "
+                    "inheritance hierarchy, and method counts."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            types.Tool(
+                name="get_sdk_class_details",
+                description=(
+                    "Get full method signatures, inheritance chain, and "
+                    "related types for a specific BakkesMod SDK class."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "class_name": {
+                            "type": "string",
+                            "description": (
+                                "The SDK class name to look up "
+                                "(e.g., 'CarWrapper', 'BallWrapper')"
+                            ),
+                        },
+                    },
+                    "required": ["class_name"],
+                },
+            ),
         ]
 
     # ----- Tool execution --------------------------------------------------
@@ -186,6 +258,116 @@ async def main():
             return [types.TextContent(
                 type="text", text="\n".join(response_parts)
             )]
+
+        elif name == "browse_sdk_classes":
+            try:
+                sdk_classes = await loop.run_in_executor(
+                    None, _get_sdk_classes
+                )
+            except FileNotFoundError as e:
+                return [types.TextContent(type="text", text=str(e))]
+            except Exception as e:
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error analyzing SDK headers: {e}",
+                )]
+
+            if not sdk_classes:
+                return [types.TextContent(
+                    type="text",
+                    text="No SDK classes found in docs_bakkesmod_only/.",
+                )]
+
+            # Sort by category then name
+            sorted_classes = sorted(
+                sdk_classes.values(),
+                key=lambda c: (c.category or "zzz", c.name),
+            )
+
+            lines = [f"BakkesMod SDK Classes ({len(sorted_classes)} total)\n"]
+            current_cat = None
+            for cls in sorted_classes:
+                cat = cls.category or "other"
+                if cat != current_cat:
+                    current_cat = cat
+                    lines.append(f"\n--- {cat.upper()} ---")
+                parent = cls.base_classes[0] if cls.base_classes else "none"
+                lines.append(
+                    f"  {cls.name}"
+                    f"\n    Methods: {len(cls.methods)}"
+                    f"\n    Inherits from: {parent}"
+                )
+
+            return [types.TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "get_sdk_class_details":
+            class_name = arguments.get("class_name", "")
+            if not class_name:
+                return [types.TextContent(
+                    type="text",
+                    text="Error: 'class_name' parameter is required.",
+                )]
+
+            try:
+                sdk_classes = await loop.run_in_executor(
+                    None, _get_sdk_classes
+                )
+            except FileNotFoundError as e:
+                return [types.TextContent(type="text", text=str(e))]
+            except Exception as e:
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error analyzing SDK headers: {e}",
+                )]
+
+            cls = sdk_classes.get(class_name)
+            if cls is None:
+                return [types.TextContent(
+                    type="text",
+                    text=(
+                        f"Class '{class_name}' not found in the SDK. "
+                        f"Use browse_sdk_classes to see available classes."
+                    ),
+                )]
+
+            # Build inheritance chain
+            chain = _cpp_analyzer.build_inheritance_chain(
+                class_name, sdk_classes
+            )
+
+            lines = [f"Class: {cls.name}"]
+            lines.append(f"File: {cls.file}")
+            lines.append(f"Category: {cls.category or 'other'}")
+            lines.append(f"Is Wrapper: {cls.is_wrapper}")
+
+            if cls.base_classes:
+                lines.append(
+                    f"Direct Base Classes: {', '.join(cls.base_classes)}"
+                )
+            if chain:
+                lines.append(
+                    f"Full Inheritance Chain: {cls.name} -> "
+                    + " -> ".join(chain)
+                )
+
+            lines.append(f"\nMethods ({len(cls.methods)}):")
+            for m in cls.methods:
+                sig = f"  {m.return_type} {m.name}({m.parameters})"
+                if m.is_const:
+                    sig += " const"
+                if m.is_virtual:
+                    sig += "  [virtual]"
+                if m.is_override:
+                    sig += "  [override]"
+                lines.append(sig)
+
+            if cls.forward_declarations:
+                lines.append(
+                    f"\nRelated Types: "
+                    + ", ".join(cls.forward_declarations)
+                )
+
+            return [types.TextContent(type="text", text="\n".join(lines))]
 
         raise ValueError(f"Tool not found: {name}")
 
