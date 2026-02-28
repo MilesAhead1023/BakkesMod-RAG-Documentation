@@ -37,6 +37,8 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
 from nicegui import ui, app as nicegui_app
 
+from bakkesmod_rag.llm_provider import get_llm, NullLLM
+
 IS_EXE = getattr(sys, "frozen", False)
 
 logger = logging.getLogger("bakkesmod_rag.nicegui_app")
@@ -534,25 +536,44 @@ def main_page():
                         ).classes("text-grey-5")
                         return
 
-                    # Basic stats
+                    # Provider status via get_llm
                     with ui.card().classes("w-full"):
+                        ui.label("LLM Provider").classes("text-subtitle1")
+                        try:
+                            llm = get_llm(allow_null=True)
+                            if isinstance(llm, NullLLM):
+                                ui.label(
+                                    "No LLM configured"
+                                ).classes("text-warning")
+                                ui.label(
+                                    "Add an API key in Settings, or "
+                                    "install Ollama for offline use."
+                                ).classes("text-caption text-grey-5")
+                            else:
+                                provider_name = getattr(
+                                    llm, "model", "unknown"
+                                )
+                                if hasattr(llm, "metadata"):
+                                    provider_name = (
+                                        llm.metadata.model_name
+                                        or provider_name
+                                    )
+                                ui.label(
+                                    f"Active: {provider_name}"
+                                ).classes("text-positive")
+                        except Exception as exc:
+                            ui.label(
+                                f"Provider detection failed: {exc}"
+                            ).classes("text-negative")
+
+                    # Basic stats
+                    with ui.card().classes("w-full q-mt-md"):
                         ui.label("Session Stats").classes("text-subtitle1")
-                        with ui.grid(columns=3).classes("w-full gap-4"):
+                        with ui.grid(columns=2).classes("w-full gap-4"):
                             ui.label(
                                 f"Documents: {eng.num_documents}"
                             )
                             ui.label(f"Nodes: {eng.num_nodes}")
-                            llm_name = "unknown"
-                            if hasattr(eng, "llm") and eng.llm:
-                                llm_name = getattr(
-                                    eng.llm, "model", "unknown"
-                                )
-                                if hasattr(eng.llm, "metadata"):
-                                    llm_name = (
-                                        eng.llm.metadata.model_name
-                                        or llm_name
-                                    )
-                            ui.label(f"LLM: {llm_name}")
 
                     # Cost tracking
                     if (
