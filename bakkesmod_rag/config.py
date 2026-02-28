@@ -43,6 +43,7 @@ class LLMConfig(BaseModel):
     fallback_models: dict[str, str] = {
         "openrouter": "deepseek/deepseek-chat-v3-0324",
         "gemini": "gemini-2.5-flash",
+        "gemini_pro": "gemini-2.5-pro",
         "openai": "gpt-4o-mini",
         "anthropic": "claude-sonnet-4-5",
     }

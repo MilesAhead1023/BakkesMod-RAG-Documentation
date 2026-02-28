@@ -5,10 +5,9 @@ Single LLM fallback chain with live verification.
 Eliminates the 3x duplication across interactive_rag, rag_gui, and code_generator.
 """
 
-import os
 import socket
 import logging
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from llama_index.core.llms import (
     CompletionResponse,
@@ -55,25 +54,6 @@ class NullLLM(CustomLLM):
     @classmethod
     def class_name(cls) -> str:
         return "null_llm"
-
-
-def _try_llm(llm, name: str) -> bool:
-    """Verify an LLM works by making a tiny test call.
-
-    Args:
-        llm: LlamaIndex LLM instance.
-        name: Human-readable provider name for logging.
-
-    Returns:
-        True if the LLM responds successfully.
-    """
-    try:
-        response = llm.complete("Say OK")
-        if response and response.text:
-            return True
-    except Exception as e:
-        logger.warning("%s test call failed: %s", name, str(e)[:120])
-    return False
 
 
 def _is_google_auth_error(error: Exception) -> bool:
@@ -172,6 +152,8 @@ def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
                 ),
             ))
         except Exception as e:
+            # google_auth_failed set here if Pro instantiation raises an auth error
+            # (Flash is excluded from providers list at instantiation time in that case)
             if _is_google_auth_error(e):
                 google_auth_failed = True
                 logger.info(
@@ -225,17 +207,16 @@ def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
             continue
 
         logger.info("Trying %s...", name)
-        print(f"[LLM] Trying {name}...")
 
         try:
             response = llm.complete("Say OK")
             if response and response.text:
-                print(f"[LLM] Using {name}")
                 logger.info("Using %s", name)
                 return llm
         except Exception as e:
             logger.warning("%s test call failed: %s", name, str(e)[:120])
-            # Detect Google auth errors to short-circuit Flash later
+            # google_auth_failed set here if Pro test-call raises an auth error
+            # (Flash is already in providers list, this guard skips it in the loop)
             if "Gemini 2.5 Pro" in name and _is_google_auth_error(e):
                 google_auth_failed = True
                 logger.info(
@@ -245,10 +226,17 @@ def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
     # 6. Ollama local model (auto-detected, no config needed)
     try:
         logger.info("Trying Ollama (local)...")
-        print("[LLM] Trying Ollama (local)...")
-        with socket.create_connection(("localhost", 11434), timeout=2.0):
-            pass
-        from llama_index.llms.ollama import Ollama
+        try:
+            with socket.create_connection(("localhost", 11434), timeout=2.0):
+                pass
+        except OSError as e:
+            raise OSError(f"Ollama server not reachable: {e}") from e
+        try:
+            from llama_index.llms.ollama import Ollama
+        except ImportError as e:
+            raise ImportError(
+                f"llama-index-llms-ollama not installed: {e}"
+            ) from e
 
         llm = Ollama(
             model="llama3.2",
@@ -256,16 +244,16 @@ def get_llm(config: Optional[RAGConfig] = None, allow_null: bool = False):
             request_timeout=10.0,
         )
         llm.complete("Say OK")
-        print("[LLM] Using Ollama llama3.2 (local, offline)")
         logger.info("Using Ollama llama3.2 (local, offline)")
         return llm
-    except Exception:
-        logger.info("Ollama not available — skipping")
+    except (OSError, ImportError) as e:
+        logger.debug("Ollama not available: %s", e)
+    except Exception as e:
+        logger.debug("Ollama test call failed: %s", e)
 
     # No provider available
     if allow_null:
         logger.warning("No LLM provider available — returning NullLLM")
-        print("[LLM] No provider available — using NullLLM (limited mode)")
         return NullLLM()
 
     raise RuntimeError(
