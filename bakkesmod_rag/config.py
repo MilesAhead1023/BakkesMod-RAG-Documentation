@@ -37,7 +37,7 @@ class LLMConfig(BaseModel):
     primary_provider: Literal["openai", "anthropic", "gemini", "openrouter"] = "gemini"
     primary_model: str = "gemini-2.5-flash"
 
-    fallback_providers: list[Literal["openai", "anthropic", "gemini", "openrouter"]] = [
+    fallback_providers: list[Literal["openai", "anthropic", "gemini", "openrouter", "ollama"]] = [
         "openai", "openrouter", "anthropic"
     ]
     fallback_models: dict[str, str] = {

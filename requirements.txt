@@ -24,6 +24,8 @@ openai>=1.0.0
 
 # GUI
 gradio>=4.0.0
+nicegui>=2.0.0
+pywebview>=5.0
 
 # MCP server (Claude Code IDE integration)
 mcp>=1.0.0
