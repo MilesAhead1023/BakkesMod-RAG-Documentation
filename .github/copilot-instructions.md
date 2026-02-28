@@ -35,7 +35,7 @@ There is no linter or formatter configured in the project.
 
 ## Architecture
 
-RAG system for BakkesMod SDK documentation using LlamaIndex. Split from [SuiteSpot](https://github.com/MilesAhead1023/SuiteSpot) (a C++20 BakkesMod Rocket League plugin).
+RAG system for BakkesMod SDK documentation using LlamaIndex. Provides an interactive query interface and code generation mode for BakkesMod Rocket League plugin development.
 
 ### Package layout
 

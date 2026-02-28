@@ -166,10 +166,6 @@ print(result.answer)
 python -m bakkesmod_rag.mcp_server
 ```
 
-## History
-
-Split from [SuiteSpot](https://github.com/MilesAhead1023/SuiteSpot) (a C++20 BakkesMod Rocket League plugin) on 2026-02-05.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -180,5 +176,4 @@ MIT — see LICENSE file.
 
 ## Related Projects
 
-- [SuiteSpot](https://github.com/MilesAhead1023/SuiteSpot) — BakkesMod plugin for Rocket League
 - [BakkesMod](https://bakkesmod.com/) — Rocket League mod framework
