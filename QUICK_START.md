@@ -51,6 +51,17 @@ pytest tests/test_cache.py -v
 
 Shows detailed output for a specific test module.
 
+### Option 4: Claude Code MCP Integration
+
+The MCP server integrates BakkesMod RAG directly into Claude Code. Ask questions about the SDK without leaving your editor.
+
+**Quick setup (one command):**
+```bash
+claude mcp add bakkesmod-rag python -m bakkesmod_rag.mcp_server
+```
+
+See [docs/mcp-setup.md](docs/mcp-setup.md) for full setup instructions, available tools, and troubleshooting.
+
 ---
 
 ## 📊 Expected Performance
@@ -201,6 +212,7 @@ Already fixed! All emojis replaced with `[OK]`, `[WARNING]`, etc.
 - **docs/deployment-guide.md** - Production deployment
 - **docs/rag-setup.md** - Installation and configuration
 - **docs/CODE_GENERATION_GUIDE.md** - Plugin code generation
+- **docs/mcp-setup.md** - MCP server setup for Claude Code integration
 
 ---
 
