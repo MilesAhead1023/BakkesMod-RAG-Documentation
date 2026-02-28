@@ -11,6 +11,7 @@ Modernised 5-tab interface with dark Rocket League theme:
 All RAG logic is delegated to ``bakkesmod_rag.RAGEngine``.
 """
 
+import io
 import os
 import sys
 import time
@@ -52,7 +53,7 @@ if _is_bundled:
                 if not self.exists():
                     root_logger.debug(f"Blocked read of missing file: {path_str}")
                     return ""  # Return empty string instead of raising
-        except:
+        except Exception:
             pass
         return _original_read_text(self, *args, **kwargs)
 
@@ -1171,4 +1172,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # Ensure UTF-8 output encoding on Windows
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     main()

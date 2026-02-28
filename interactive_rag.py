@@ -5,12 +5,18 @@ syntax highlighting, and session statistics while delegating all RAG
 logic to the unified engine.
 """
 
+import io
 import os
 import sys
 import time
 import re
 from datetime import datetime
 from dotenv import load_dotenv
+
+# Ensure UTF-8 output encoding on Windows
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 load_dotenv()
 
