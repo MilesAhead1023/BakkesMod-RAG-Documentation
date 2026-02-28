@@ -7,18 +7,18 @@ This guide covers deploying the BakkesMod RAG Documentation system for productio
 ## Table of Contents
 
 1. [Windows Executable (Easiest)](#windows-executable)
-2. [Local Development](#local-development)
-3. [Docker Deployment](#docker-deployment)
-4. [Production Deployment](#production-deployment)
-5. [Cloud Deployment](#cloud-deployment)
+2. [Prerequisites](#prerequisites)
+3. [Local Development](#local-development)
+4. [Docker Deployment](#docker-deployment)
+5. [Production Deployment](#production-deployment)
 6. [Configuration](#configuration)
-7. [Security](#security)
-8. [Monitoring](#monitoring)
-9. [Health Checks](#health-checks)
-10. [Scaling](#scaling)
-11. [Backup and Recovery](#backup-and-recovery)
-12. [Performance Tuning](#performance-tuning)
-13. [Troubleshooting](#troubleshooting)
+7. [Monitoring](#monitoring)
+8. [Health Checks](#health-checks)
+9. [Scaling](#scaling)
+10. [Troubleshooting](#troubleshooting)
+11. [Security](#security)
+12. [Backup and Recovery](#backup-and-recovery)
+13. [Performance Tuning](#performance-tuning)
 
 ---
 
