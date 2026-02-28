@@ -125,8 +125,6 @@ class GUILogHandler(logging.Handler):
 # Stdout/stderr capture — routes print() output into the log handler too
 # ---------------------------------------------------------------------------
 
-import io
-
 class _TeeWriter(io.TextIOBase):
     """Writes to the original stream AND appends to the GUI log buffer."""
 
