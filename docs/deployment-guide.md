@@ -22,14 +22,16 @@ This guide covers deploying the BakkesMod RAG Documentation system for productio
 
 ---
 
-## Windows Executable
+## Windows Executable (NiceGUI Native App)
 
 **Easiest option for Windows users - No Python installation required!**
+
+The native desktop app uses NiceGUI and opens as a native window (no browser needed). It has 7 tabs: Query, Code Gen, Settings, and more.
 
 ### For End Users
 
 1. **Download the pre-built executable:**
-   - Get `BakkesMod_RAG_GUI.zip` from [GitHub Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases)
+   - Get `BakkesModRAG.zip` from [GitHub Releases](https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/releases)
    - Extract to your desired location
 
 2. **Configure API keys:**
@@ -41,18 +43,26 @@ This guide covers deploying the BakkesMod RAG Documentation system for productio
 
 3. **Run:**
    ```cmd
-   BakkesMod_RAG_GUI.exe
+   BakkesModRAG.exe
    ```
 
 See [exe-user-guide.md](exe-user-guide.md) for detailed instructions.
 
 ### For Developers (Building from Source)
 
-Build your own executable:
+Run the NiceGUI app in development mode:
 
 ```cmd
-build_exe.bat
+python nicegui_app.py
 ```
+
+Build a standalone executable:
+
+```cmd
+pyinstaller --clean --noconfirm nicegui_app.spec
+```
+
+Output: `dist/BakkesModRAG/BakkesModRAG.exe` (COLLECT/directory mode).
 
 See [build-exe-guide.md](build-exe-guide.md) for detailed build instructions.
 
@@ -141,10 +151,13 @@ The GUI will be available at `http://localhost:7860`.
 
 **Or launch manually:**
 ```bash
+# Start the native desktop app (NiceGUI)
+python nicegui_app.py
+
 # Start the interactive CLI
 python interactive_rag.py
 
-# Or start the web GUI
+# Or start the Gradio web GUI (used by Docker)
 python rag_gui.py
 ```
 

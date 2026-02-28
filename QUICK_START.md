@@ -16,7 +16,27 @@ Your RAG system is fully operational! Here's how to use it on **Windows 11** (pr
 
 ## 🚀 How to Use
 
-### Option 1: Interactive Mode (Recommended)
+### Option 1: Native Desktop App (NiceGUI)
+```bash
+# Run the NiceGUI desktop app (development)
+python nicegui_app.py
+
+# Build a standalone Windows executable
+pyinstaller --clean --noconfirm nicegui_app.spec
+```
+
+The NiceGUI app opens as a native desktop window with 7 tabs (Query, Code Gen, Settings, etc.). No browser needed.
+
+The built exe is located at `dist/BakkesModRAG/BakkesModRAG.exe` (directory/COLLECT mode).
+
+### Option 2: Docker (Gradio Web UI)
+```bash
+docker-compose up -d
+```
+
+The Docker deployment uses the Gradio web interface (`rag_gui.py`) at `http://localhost:7860`.
+
+### Option 3: Interactive CLI
 ```bash
 python interactive_rag.py
 ```
@@ -33,24 +53,6 @@ Commands:
 - `stats` - Show session statistics
 - `quit` - Exit
 
-### Option 2: Run Test Suite
-```bash
-# Run fast tests (no API keys needed)
-pytest -m "not integration" -v
-
-# Run all tests including integration (requires API keys + built index)
-pytest -v
-```
-
-Runs all unit and integration tests.
-
-### Option 3: Run Specific Test
-```bash
-pytest tests/test_cache.py -v
-```
-
-Shows detailed output for a specific test module.
-
 ### Option 4: Claude Code MCP Integration
 
 The MCP server integrates BakkesMod RAG directly into Claude Code. Ask questions about the SDK without leaving your editor.
@@ -61,6 +63,18 @@ claude mcp add bakkesmod-rag python -m bakkesmod_rag.mcp_server
 ```
 
 See [docs/mcp-setup.md](docs/mcp-setup.md) for full setup instructions, available tools, and troubleshooting.
+
+### Running Tests
+```bash
+# Run fast tests (no API keys needed)
+pytest -m "not integration" -v
+
+# Run all tests including integration (requires API keys + built index)
+pytest -v
+
+# Run a specific test module
+pytest tests/test_cache.py -v
+```
 
 ---
 
@@ -112,8 +126,10 @@ See [docs/mcp-setup.md](docs/mcp-setup.md) for full setup instructions, availabl
 
 ```
 BakkesMod-RAG-Documentation/
+├── nicegui_app.py              # Native desktop app (NiceGUI)
+├── nicegui_app.spec            # PyInstaller spec for building exe
 ├── interactive_rag.py          # Interactive query mode (CLI)
-├── rag_gui.py                  # Web-based GUI (Gradio)
+├── rag_gui.py                  # Web-based GUI (Gradio, used by Docker)
 ├── bakkesmod_rag/              # Core package (all RAG logic)
 ├── .env                        # Your API keys
 ├── QUICK_START.md              # This file
@@ -187,7 +203,7 @@ Already fixed! All emojis replaced with `[OK]`, `[WARNING]`, etc.
 ## 🎯 Next Steps
 
 ### Immediate
-1. ✅ Run `python interactive_rag.py`
+1. ✅ Run `python nicegui_app.py` (native desktop app) or `python interactive_rag.py` (CLI)
 2. ✅ Ask your own questions
 3. ✅ Run `pytest -m "not integration" -v` to verify the installation
 
@@ -245,6 +261,10 @@ Your RAG system is fully tested and operational.
 
 **Start querying:**
 ```bash
+# Native desktop app
+python nicegui_app.py
+
+# Or CLI mode
 python interactive_rag.py
 ```
 
