@@ -193,7 +193,7 @@ Already fixed! All emojis replaced with `[OK]`, `[WARNING]`, etc.
 
 - **TEST_RESULTS.md** - Full test report with metrics
 - **README.md** - Project overview
-- **docs/2026-gold-standard-architecture.md** - System architecture
+- **CLAUDE.md** - System architecture and design overview
 - **docs/deployment-guide.md** - Production deployment
 
 ---

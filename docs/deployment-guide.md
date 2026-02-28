@@ -516,4 +516,4 @@ cache.enabled = False
 
 For issues or questions:
 - GitHub Issues: https://github.com/MilesAhead1023/BakkesMod-RAG-Documentation/issues
-- Documentation: See `docs/2026-gold-standard-architecture.md`
+- Documentation: See `CLAUDE.md` for architecture and system design
